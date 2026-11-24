@@ -24,6 +24,7 @@
 #define SEEDKEEPER_TYPE_BIP39 0x30
 #define SEEDKEEPER_TYPE_ELECTRUM 0x40
 #define SEEDKEEPER_TYPE_PASSWORD 0x90
+#define SEEDKEEPER_TYPE_AUTHENTIKEY 0xA0
 #define SEEDKEEPER_SUBTYPE_DEFAULT 0x00
 #define SEEDKEEPER_SUBTYPE_BIP39 0x01
 #define SEEDKEEPER_EXPORT_ALLOWED 0x01
@@ -102,6 +103,9 @@ bool seedkeeper_can_import(const seedkeeper_header_t *header);
 /* Plaintext-exportable Password secret (type 0x90). */
 bool seedkeeper_can_passphrase(const seedkeeper_header_t *header);
 
+/* Any listed secret except the card's authentikey certificate. */
+bool seedkeeper_can_delete(const seedkeeper_header_t *header);
+
 /*
  * One plaintext-export chunk: chunk_size(2) || chunk || optional signature.
  * `last` is set when the signature trailer is present. `chunk` points into
@@ -178,7 +182,7 @@ size_t seedkeeper_apdu_import_data(uint8_t p2, const uint8_t *chunk,
 /* FINAL response: sid || fingerprint[4]. */
 bool seedkeeper_import_result(const uint8_t *resp, size_t len, uint16_t *id,
                               uint8_t fingerprint[4]);
-/* INS 0xA5. Removes a secret after a fingerprint mismatch. */
+/* INS 0xA5. Removes one secret. The secret itself is not read. */
 size_t seedkeeper_apdu_reset(uint16_t sid, uint8_t *out, size_t cap);
 
 #endif

@@ -5,6 +5,7 @@
  */
 
 #include "smartcard_page.h"
+#include "smartcard_delete.h"
 #include "smartcard_import.h"
 
 #if defined(CONFIG_KERN_BOARD_P4_PICO) && !defined(SIMULATOR)
@@ -187,6 +188,22 @@ static void import_event(lv_event_t *e) {
   ui_oneshot_start(&again, import_now, 0);
 }
 
+static void delete_back(void) {
+  smartcard_delete_destroy();
+  smartcard_page_show();
+}
+
+static void delete_now(lv_timer_t *timer) {
+  (void)timer;
+  smartcard_page_hide();
+  smartcard_delete_create(lv_screen_active(), delete_back);
+}
+
+static void delete_event(lv_event_t *e) {
+  (void)e;
+  ui_oneshot_start(&again, delete_now, 0);
+}
+
 static void show_report(void) {
   lv_obj_clean(body);
   status_label =
@@ -199,6 +216,11 @@ static void show_report(void) {
         theme_create_button(body, "Import a secret", false);
     lv_obj_set_style_margin_top(import_button, theme_default_padding(), 0);
     lv_obj_add_event_cb(import_button, import_event, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *delete_button =
+        theme_create_button(body, "Delete a secret", false);
+    lv_obj_set_style_margin_top(delete_button, theme_default_padding(), 0);
+    lv_obj_add_event_cb(delete_button, delete_event, LV_EVENT_CLICKED, NULL);
   }
 
   lv_obj_t *button = theme_create_button(body, "Probe again", false);
@@ -271,6 +293,7 @@ void smartcard_page_hide(void) {
 
 void smartcard_page_destroy(void) {
   session_cleanup_unregister(smartcard_page_destroy);
+  smartcard_delete_destroy();
   smartcard_import_destroy();
   ui_oneshot_cancel(&again);
   if (running) {
@@ -300,6 +323,9 @@ void smartcard_page_create(lv_obj_t *parent, void (*return_cb)(void)) {
 
 void smartcard_page_show(void) {}
 void smartcard_page_hide(void) {}
-void smartcard_page_destroy(void) { smartcard_import_destroy(); }
+void smartcard_page_destroy(void) {
+  smartcard_delete_destroy();
+  smartcard_import_destroy();
+}
 
 #endif

@@ -130,6 +130,10 @@ bool seedkeeper_can_passphrase(const seedkeeper_header_t *header) {
          header->export_rights == SEEDKEEPER_EXPORT_ALLOWED;
 }
 
+bool seedkeeper_can_delete(const seedkeeper_header_t *header) {
+  return header && header->type != SEEDKEEPER_TYPE_AUTHENTIKEY;
+}
+
 bool seedkeeper_export_chunk(const uint8_t *buf, size_t len,
                              const uint8_t **chunk, size_t *chunk_len,
                              bool *last) {

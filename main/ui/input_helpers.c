@@ -9,15 +9,15 @@
 // Compact keyboard maps shared by all boards.
 // Trade fewer keys per row for wider touch targets.
 
-// Ctrl-map roles. Only KB_ACTION carries CTRL_CHECKED, which is what the theme
-// renders as a filled action key. Mode switches deliberately drop it so the
-// fill keeps meaning "backspace/OK". KB_BACKSPACE omits NO_REPEAT so it still
-// repeats when held.
+// Ctrl-map roles. CHECKED is what the theme renders as a filled action key:
+// backspace, the cursor arrows, and OK. Mode switches deliberately drop it.
+// Backspace and the arrows omit NO_REPEAT so they still repeat when held.
 #define KB_KEY 1
-#define KB_SPACE 5
+#define KB_SPACE 3
 #define KB_MODE                                                                \
   (LV_BUTTONMATRIX_CTRL_NO_REPEAT | LV_BUTTONMATRIX_CTRL_CLICK_TRIG | 2)
 #define KB_BACKSPACE (LV_BUTTONMATRIX_CTRL_CHECKED | 2)
+#define KB_CURSOR KB_BACKSPACE
 #define KB_ACTION (LV_KEYBOARD_CTRL_BUTTON_FLAGS | 2)
 
 // LVGL keeps one global map table for every keyboard, so a scan-capable and a
@@ -28,12 +28,14 @@
 #define KB_ROWS_LC                                                             \
   "q", "w", "e", "r", "t", "y", "u", "i", "o", "p", "\n", "a", "s", "d", "f",  \
       "g", "h", "j", "k", "l", "\n", "ABC", "z", "x", "c", "v", "b", "n", "m", \
-      LV_SYMBOL_BACKSPACE, "\n", "1#", ",", " ", "."
+      LV_SYMBOL_BACKSPACE, "\n", "1#", ",", LV_SYMBOL_LEFT, " ",               \
+      LV_SYMBOL_RIGHT, "."
 
 #define KB_ROWS_UC                                                             \
   "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "\n", "A", "S", "D", "F",  \
       "G", "H", "J", "K", "L", "\n", "abc", "Z", "X", "C", "V", "B", "N", "M", \
-      LV_SYMBOL_BACKSPACE, "\n", "1#", ",", " ", "."
+      LV_SYMBOL_BACKSPACE, "\n", "1#", ",", LV_SYMBOL_LEFT, " ",               \
+      LV_SYMBOL_RIGHT, "."
 
 // Five rows covering every printable ASCII symbol (',' and '.' live on the
 // letter pages) so any externally created passphrase or KEF key can be typed.
@@ -41,23 +43,26 @@
   "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "\n", "@", "#", "$", "%",  \
       "&", "*", "+", "-", "=", "/", "\n", "(", ")", "[", "]", "{", "}", "<",   \
       ">", "\"", "'", "\n", "abc", "!", "?", ";", ":", "_", "\\", "|",         \
-      LV_SYMBOL_BACKSPACE, "\n", "~", "^", "`", " "
+      LV_SYMBOL_BACKSPACE, "\n", "~", "^", "`", LV_SYMBOL_LEFT, " ",           \
+      LV_SYMBOL_RIGHT
 
-// q w e r t y u i o p / a s d f g h j k l / ABC z x c v b n m <- / 1# , _ .
+// q w e r t y u i o p / a s d f g h j k l / ABC z x c v b n m <- /
+// 1# , left space right .
 #define KB_CTRL_LETTERS                                                        \
   KB_KEY, KB_KEY, KB_KEY, KB_KEY, KB_KEY, KB_KEY, KB_KEY, KB_KEY, KB_KEY,      \
       KB_KEY, KB_KEY, KB_KEY, KB_KEY, KB_KEY, KB_KEY, KB_KEY, KB_KEY, KB_KEY,  \
       KB_KEY, KB_MODE, KB_KEY, KB_KEY, KB_KEY, KB_KEY, KB_KEY, KB_KEY, KB_KEY, \
-      KB_BACKSPACE, KB_MODE, KB_KEY, KB_SPACE, KB_KEY
+      KB_BACKSPACE, KB_MODE, KB_KEY, KB_CURSOR, KB_SPACE, KB_CURSOR, KB_KEY
 
-// 1..0 / @ # $ % & * + - = / / ( ) [ ] { } < > " ' / abc ! ? ; : _ \ | <- / ~ ^
-// ` _
+// 1..0 / @ # $ % & * + - = / / ( ) [ ] { } < > " ' / abc ! ? ; : _ \ | <- /
+// ~ ^ ` left space right
 #define KB_CTRL_SPEC                                                           \
   KB_KEY, KB_KEY, KB_KEY, KB_KEY, KB_KEY, KB_KEY, KB_KEY, KB_KEY, KB_KEY,      \
       KB_KEY, KB_KEY, KB_KEY, KB_KEY, KB_KEY, KB_KEY, KB_KEY, KB_KEY, KB_KEY,  \
       KB_KEY, KB_KEY, KB_KEY, KB_KEY, KB_KEY, KB_KEY, KB_KEY, KB_KEY, KB_KEY,  \
       KB_KEY, KB_KEY, KB_KEY, KB_MODE, KB_KEY, KB_KEY, KB_KEY, KB_KEY, KB_KEY, \
-      KB_KEY, KB_KEY, KB_BACKSPACE, KB_KEY, KB_KEY, KB_KEY, KB_SPACE
+      KB_KEY, KB_KEY, KB_BACKSPACE, KB_KEY, KB_KEY, KB_KEY, KB_CURSOR,         \
+      KB_SPACE, KB_CURSOR
 
 static const char *const compact_kb_map_lc[] = {KB_ROWS_LC, LV_SYMBOL_OK, ""};
 static const char *const compact_kb_map_uc[] = {KB_ROWS_UC, LV_SYMBOL_OK, ""};

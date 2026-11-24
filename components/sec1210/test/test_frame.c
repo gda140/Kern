@@ -420,6 +420,17 @@ static void test_password_decode(void) {
   header.type = SEEDKEEPER_TYPE_BIP39;
   header.export_rights = SEEDKEEPER_EXPORT_ALLOWED;
   expect("mnemonic is not a password", !seedkeeper_can_passphrase(&header));
+
+  expect("null secret stays", !seedkeeper_can_delete(NULL));
+  header.type = SEEDKEEPER_TYPE_AUTHENTIKEY;
+  expect("authentikey stays", !seedkeeper_can_delete(&header));
+  header.type = SEEDKEEPER_TYPE_MASTER_SEED;
+  header.export_rights = 0x02;
+  expect("secure-only masterseed can be deleted",
+         seedkeeper_can_delete(&header));
+  header.type = SEEDKEEPER_TYPE_PASSWORD;
+  expect("secure-only password can be deleted",
+         seedkeeper_can_delete(&header));
 }
 
 int main(void) {
