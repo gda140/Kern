@@ -15,6 +15,9 @@
 #include "load_storage.h"
 #include "manual_input.h"
 #include "word_numbers_input.h"
+#if defined(CONFIG_KERN_BOARD_P4_PICO) && !defined(SIMULATOR)
+#include "../smartcard/smartcard_import.h"
+#endif
 #include <lvgl.h>
 #include <stdlib.h>
 
@@ -206,6 +209,24 @@ static void from_sd_cb(void) {
   load_storage_page_show();
 }
 
+#if defined(CONFIG_KERN_BOARD_P4_PICO) && !defined(SIMULATOR)
+static void seedkeeper_back(void) {
+  smartcard_import_destroy();
+  load_menu_page_show();
+}
+
+static void seedkeeper_loaded(void) {
+  load_menu_page_destroy();
+  home_page_create(lv_screen_active());
+  home_page_show();
+}
+
+static void from_seedkeeper_cb(void) {
+  load_menu_page_hide();
+  smartcard_import_create(lv_screen_active(), seedkeeper_back, seedkeeper_loaded);
+}
+#endif
+
 static void back_cb(void) {
   void (*callback)(void) = return_callback;
   load_menu_page_hide();
@@ -234,6 +255,10 @@ void load_menu_page_create(lv_obj_t *parent, void (*return_cb)(void)) {
                               from_flash_cb);
   ui_menu_add_entry_with_icon(load_menu, ICON_SD_CARD, "From SD Card",
                               from_sd_cb);
+#if defined(CONFIG_KERN_BOARD_P4_PICO) && !defined(SIMULATOR)
+  ui_menu_add_entry_with_icon(load_menu, ICON_KEY, "From Seedkeeper",
+                              from_seedkeeper_cb);
+#endif
   ui_menu_show(load_menu);
 }
 
@@ -249,6 +274,9 @@ void load_menu_page_hide(void) {
 
 void load_menu_page_destroy(void) {
   session_cleanup_unregister(load_menu_page_destroy);
+#if defined(CONFIG_KERN_BOARD_P4_PICO) && !defined(SIMULATOR)
+  smartcard_import_destroy();
+#endif
   destroy_manual_method_menu();
   if (load_menu) {
     ui_menu_destroy(load_menu);

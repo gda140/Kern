@@ -1,16 +1,18 @@
 // Backup Menu Page
 
 #include "backup_menu.h"
-#include "../../../core/storage.h"
 #include "../../../ui/assets/icons.h"
 #include "../../../ui/dialog.h"
 #include "../../../ui/menu.h"
 #include "../../../ui/theme_widgets.h"
 #include "../../../utils/session_cleanup.h"
-#include "../../store_mnemonic.h"
 #include "mnemonic_qr.h"
 #include "mnemonic_words.h"
 #include <lvgl.h>
+
+#if defined(CONFIG_KERN_BOARD_P4_PICO) && !defined(SIMULATOR)
+#include "../../smartcard/smartcard_save.h"
+#endif
 
 static ui_menu_t *backup_menu = NULL;
 static lv_obj_t *backup_menu_screen = NULL;
@@ -58,26 +60,17 @@ static void menu_words_cb(void) { warn_and_launch(launch_words); }
 
 static void menu_qr_cb(void) { warn_and_launch(launch_qr); }
 
-/* --- Save to Flash / SD callbacks --- */
-
-static void return_from_store_cb(void) {
-  store_mnemonic_page_destroy();
+#if defined(CONFIG_KERN_BOARD_P4_PICO) && !defined(SIMULATOR)
+static void seedkeeper_back(void) {
+  smartcard_save_destroy();
   backup_menu_page_show();
 }
 
-static void menu_save_flash_cb(void) {
+static void menu_seedkeeper_cb(void) {
   backup_menu_page_hide();
-  store_mnemonic_page_create(lv_screen_active(), return_from_store_cb,
-                             STORAGE_FLASH);
-  store_mnemonic_page_show();
+  smartcard_save_create(lv_screen_active(), seedkeeper_back);
 }
-
-static void menu_save_sd_cb(void) {
-  backup_menu_page_hide();
-  store_mnemonic_page_create(lv_screen_active(), return_from_store_cb,
-                             STORAGE_SD);
-  store_mnemonic_page_show();
-}
+#endif
 
 /* --- Back --- */
 
@@ -103,10 +96,10 @@ void backup_menu_page_create(lv_obj_t *parent, void (*return_cb)(void)) {
   ui_menu_add_entry_with_icon(backup_menu, LV_SYMBOL_LIST, "Words",
                               menu_words_cb);
   ui_menu_add_entry_with_icon(backup_menu, ICON_QR_CODE, "QR Code", menu_qr_cb);
-  ui_menu_add_entry_with_icon(backup_menu, LV_SYMBOL_DRIVE, "Save to Flash",
-                              menu_save_flash_cb);
-  ui_menu_add_entry_with_icon(backup_menu, ICON_SD_CARD, "Save to SD",
-                              menu_save_sd_cb);
+#if defined(CONFIG_KERN_BOARD_P4_PICO) && !defined(SIMULATOR)
+  ui_menu_add_entry_with_icon(backup_menu, ICON_KEY, "To Seedkeeper",
+                              menu_seedkeeper_cb);
+#endif
 }
 
 void backup_menu_page_show(void) {
@@ -129,6 +122,9 @@ void backup_menu_page_hide(void) {
 
 void backup_menu_page_destroy(void) {
   session_cleanup_unregister(backup_menu_page_destroy);
+#if defined(CONFIG_KERN_BOARD_P4_PICO) && !defined(SIMULATOR)
+  smartcard_save_destroy();
+#endif
   if (backup_menu) {
     ui_menu_destroy(backup_menu);
     backup_menu = NULL;

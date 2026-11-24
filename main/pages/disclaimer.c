@@ -1,32 +1,32 @@
-// Research-and-development disclaimer, acknowledged once per firmware version
+// Development disclaimer. Accepted in RAM only, so every power-on shows it
+// again. A reboot clears the flag. Accepting it once this boot skips it
+// until the next one, including after the session lock.
 
 #include "disclaimer.h"
-#include "../core/settings.h"
-#include "../project.h"
 #include "../ui/dialog.h"
-#include <esp_app_desc.h>
 
-#define DISCLAIMER_TITLE PROJECT_NAME " is R&D"
+#include <stdbool.h>
+
+#define DISCLAIMER_TITLE "This Kern fork version"
 
 #define DISCLAIMER_TEXT                                                        \
-  "This is a research and development project, not a product.\n\n"             \
-  "It exists to explore new hardware and Bitcoin self-custody ideas.\n\n"      \
-  "The firmware is unaudited. Testnet is what it is built for. Any mainnet "   \
-  "use is entirely at your own risk, and no security guarantees are made."
+  "It is a development build, not a product.\n\n"                              \
+  "It has not been audited. Do not use it with real funds.\n\n"                \
+  "Testnet is what it is built for. No security guarantees are made."
 
 static disclaimer_done_cb done_callback = NULL;
+static bool accepted_this_boot = false;
 
 static void acknowledged_cb(void *user_data) {
   (void)user_data;
-  settings_acknowledge_disclaimer(esp_app_get_description()->version);
+  accepted_this_boot = true;
   if (done_callback)
     done_callback();
 }
 
 void disclaimer_gate(disclaimer_done_cb done) {
   done_callback = done;
-
-  if (settings_disclaimer_acknowledged(esp_app_get_description()->version)) {
+  if (accepted_this_boot) {
     if (done)
       done();
     return;

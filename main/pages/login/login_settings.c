@@ -12,6 +12,7 @@
 #include "../settings/firmware_update.h"
 #include "../settings/self_test_page.h"
 #include "security_settings.h"
+#include "../smartcard/smartcard_page.h"
 #include <bsp/display.h>
 #include <lvgl.h>
 
@@ -168,6 +169,19 @@ static void brightness_cb(void) { show_brightness_page(); }
 
 static void screensaver_cb(void) { show_screensaver_page(); }
 
+#if defined(CONFIG_KERN_BOARD_P4_PICO) && !defined(SIMULATOR)
+static void smartcard_return_cb(void) {
+  smartcard_page_destroy();
+  ui_menu_show(settings_menu);
+}
+
+static void smartcard_cb(void) {
+  ui_menu_hide(settings_menu);
+  smartcard_page_create(lv_screen_active(), smartcard_return_cb);
+  smartcard_page_show();
+}
+#endif
+
 static void settings_back_cb(void) {
   if (return_callback)
     return_callback();
@@ -192,6 +206,9 @@ void login_settings_page_create(lv_obj_t *parent, void (*return_cb)(void)) {
   ui_menu_add_entry(settings_menu, "Screensaver", screensaver_cb);
   ui_menu_add_entry(settings_menu, "Firmware Update", firmware_update_cb);
   ui_menu_add_entry(settings_menu, "Self Test", self_test_cb);
+#if defined(CONFIG_KERN_BOARD_P4_PICO) && !defined(SIMULATOR)
+  ui_menu_add_entry(settings_menu, "Smartcard", smartcard_cb);
+#endif
 }
 
 void login_settings_page_show(void) {

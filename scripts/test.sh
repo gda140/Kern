@@ -16,6 +16,9 @@ make -C "$REPO_ROOT/components/deflate_codec/test" run
 echo "Running bbqr tests..."
 make -C "$REPO_ROOT/components/bbqr/test" run
 
+echo "Running SEC1210 frame tests..."
+make -C "$REPO_ROOT/components/sec1210/test" run
+
 echo "Running QR parser tests..."
 make -C "$REPO_ROOT/main/qr/test" run
 

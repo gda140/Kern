@@ -39,6 +39,7 @@ components/secure_memory/test/test_cleanup
 components/secure_memory/test/test_secret_alloc
 components/bbqr/test/test_bbqr
 components/bbqr/test/test_base32
+components/sec1210/test/test_frame
 components/deflate_codec/test/test_deflate_codec
 main/qr/test/test_parser
 main/qr/test/test_progress

@@ -1,0 +1,676 @@
+/*
+ * Load one Seedkeeper Password secret into the BIP39 passphrase field.
+ *
+ * The card PIN is sent once. The password bytes become the passphrase. A
+ * login or URL stored beside them is ignored. The caller confirms the
+ * fingerprint before the wallet changes.
+ */
+
+#include "smartcard_passphrase.h"
+
+#if defined(CONFIG_KERN_BOARD_P4_PICO) && !defined(SIMULATOR)
+
+#include "../../core/seedkeeper.h"
+#include "../../core/seedkeeper_channel.h"
+#include "../../ui/dialog.h"
+#include "../../ui/input_helpers.h"
+#include "../../ui/menu.h"
+#include "../../ui/oneshot.h"
+#include "../../ui/theme_widgets.h"
+#include "../../utils/secure_mem.h"
+#include "../../utils/session_cleanup.h"
+#include "../../utils/worker_task.h"
+#include "sec1210.h"
+
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <stdio.h>
+#include <string.h>
+#include <wally_crypto.h>
+
+#define PASS_STACK (48 * 1024)
+#define MAX_SECRETS 16
+#define SECRET_MAX 512
+#define PASS_MAX 256
+
+enum { JOB_OPEN, JOB_PIN, JOB_LIST, JOB_EXPORT };
+
+static void (*return_callback)(void) = NULL;
+static smartcard_passphrase_cb loaded_callback = NULL;
+static lv_obj_t *screen = NULL;
+static lv_obj_t *title = NULL;
+static lv_obj_t *back_btn = NULL;
+static lv_obj_t *body = NULL;
+static lv_obj_t *pin_host = NULL;
+static lv_timer_t *poll_timer = NULL;
+static ui_oneshot_t defer;
+static ui_text_input_t pin_input;
+static ui_menu_t *secret_menu = NULL;
+static volatile bool done;
+static bool running;
+static bool reader_up;
+static int job;
+static bool job_ok;
+static bool ask_pin;
+static char note[160];
+static uint8_t pin[SEEDKEEPER_PIN_MAX];
+static size_t pin_len;
+static seedkeeper_header_t secrets[MAX_SECRETS];
+static int secret_count;
+static bool list_truncated;
+static int export_index;
+static char passphrase[PASS_MAX];
+static sec1210_err_t io_err;
+static uint8_t sw1, sw2;
+
+static void wipe_loaded(void) { secure_memzero(passphrase, sizeof(passphrase)); }
+
+static void reader_down(void) {
+  seedkeeper_session_close();
+  if (!reader_up)
+    return;
+  if (sec1210_power_off() != SEC1210_OK) {
+    /* Closing the UART is the useful part once power-off has failed. */
+  }
+  sec1210_deinit();
+  reader_up = false;
+}
+
+static void chrome(bool on) {
+  if (back_btn) {
+    if (on)
+      lv_obj_clear_flag(back_btn, LV_OBJ_FLAG_HIDDEN);
+    else
+      lv_obj_add_flag(back_btn, LV_OBJ_FLAG_HIDDEN);
+  }
+  if (title) {
+    if (on)
+      lv_obj_clear_flag(title, LV_OBJ_FLAG_HIDDEN);
+    else
+      lv_obj_add_flag(title, LV_OBJ_FLAG_HIDDEN);
+  }
+}
+
+static void show_menu(void);
+static void list_now(lv_timer_t *timer);
+
+static void list_button_cb(lv_event_t *e) {
+  (void)e;
+  ui_oneshot_start(&defer, list_now, 0);
+}
+
+static void show_note(bool list_button) {
+  chrome(true);
+  if (title)
+    lv_label_set_text(title, "Passphrase");
+  if (secret_menu)
+    ui_menu_hide(secret_menu);
+  lv_obj_clean(body);
+  lv_obj_clear_flag(body, LV_OBJ_FLAG_HIDDEN);
+  const char *text = note[0] ? note : sec1210_err_str(io_err);
+  if (!note[0] && io_err == SEC1210_OK)
+    text = "The card did not accept the command.";
+  lv_obj_t *label = theme_create_label(body, text, false);
+  lv_obj_set_width(label, LV_PCT(100));
+  lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
+  if (io_err != SEC1210_OK && sec1210_last_detail()[0]) {
+    lv_obj_t *detail = theme_create_label(body, sec1210_last_detail(), false);
+    lv_obj_set_width(detail, LV_PCT(100));
+    lv_label_set_long_mode(detail, LV_LABEL_LONG_WRAP);
+  }
+  if (list_button && seedkeeper_session_is_open()) {
+    lv_obj_t *button = theme_create_button(body, "Back to the list", false);
+    lv_obj_set_style_margin_top(button, theme_default_padding(), 0);
+    lv_obj_add_event_cb(button, list_button_cb, LV_EVENT_CLICKED, NULL);
+  }
+}
+
+static void note_sw(const char *what) {
+  int tries = 0;
+  ask_pin = false;
+  if (seedkeeper_pin_tries_left(sw1, sw2, &tries)) {
+    snprintf(note, sizeof(note), "Wrong PIN. %d %s left.", tries,
+             tries == 1 ? "try" : "tries");
+    ask_pin = true;
+    return;
+  }
+  if (sw1 == 0x9C && sw2 == 0x02) {
+    snprintf(note, sizeof(note), "Wrong PIN.");
+    ask_pin = true;
+    return;
+  }
+  if (sw1 == 0x9C && sw2 == 0x06) {
+    snprintf(note, sizeof(note), "The card still wants the PIN.");
+    ask_pin = true;
+    return;
+  }
+  if (sw1 == 0x9C && sw2 == 0x0C) {
+    snprintf(note, sizeof(note), "PIN is blocked.");
+    return;
+  }
+  if (sw1 == 0x9C && sw2 == 0x31) {
+    snprintf(note, sizeof(note), "The card refused a plaintext export.");
+    return;
+  }
+  if (sw1 == 0x9C && sw2 >= 0x20 && sw2 <= 0x23) {
+    snprintf(note, sizeof(note), "The secure session was rejected.");
+    return;
+  }
+  snprintf(note, sizeof(note), "%s (SW %02X%02X).", what, sw1, sw2);
+}
+
+static bool status_ok(void) {
+  return io_err == SEC1210_OK && sw1 == 0x90 && sw2 == 0x00;
+}
+
+static void job_open(void) {
+  io_err = sec1210_init();
+  if (io_err != SEC1210_OK)
+    return;
+  reader_up = true;
+
+  sec1210_card_t card = SEC1210_CARD_ABSENT;
+  io_err = sec1210_slot_status(&card);
+  if (io_err != SEC1210_OK)
+    return;
+  if (card == SEC1210_CARD_ABSENT) {
+    snprintf(note, sizeof(note), "No card inserted.");
+    io_err = SEC1210_ERR_CARD;
+    return;
+  }
+
+  bool session_failed = false;
+  for (int attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0)
+      vTaskDelay(pdMS_TO_TICKS(300));
+
+    uint8_t atr[SEC1210_MAX_ATR];
+    size_t atr_len = 0;
+    io_err = sec1210_power_on(atr, sizeof(atr), &atr_len);
+    if (io_err != SEC1210_OK)
+      continue;
+
+    uint8_t apdu[32];
+    uint8_t resp[256];
+    size_t resp_len = 0;
+    size_t apdu_len = seedkeeper_apdu_select(apdu, sizeof(apdu));
+    io_err = sec1210_transmit(apdu, apdu_len, resp, sizeof(resp), &resp_len,
+                             &sw1, &sw2);
+    secure_memzero(resp, sizeof(resp));
+    if (io_err != SEC1210_OK)
+      continue;
+    if (!status_ok()) {
+      note_sw("Select failed");
+      return;
+    }
+    io_err = seedkeeper_session_open();
+    if (io_err == SEC1210_OK) {
+      job_ok = true;
+      return;
+    }
+    session_failed = true;
+    sec1210_power_off();
+  }
+  if (session_failed && !note[0])
+    snprintf(note, sizeof(note), "Could not open a secure session.");
+}
+
+static void job_pin(void) {
+  uint8_t apdu[5 + SEEDKEEPER_PIN_MAX];
+  uint8_t resp[64];
+  size_t resp_len = 0;
+  size_t apdu_len =
+      seedkeeper_apdu_verify_pin(pin, pin_len, apdu, sizeof(apdu));
+  secure_memzero(pin, sizeof(pin));
+  pin_len = 0;
+  if (!apdu_len) {
+    io_err = SEC1210_ERR_ARG;
+    snprintf(note, sizeof(note), "The PIN is 4 to 16 characters.");
+    return;
+  }
+  io_err = seedkeeper_session_transmit(apdu, apdu_len, resp, sizeof(resp),
+                                       &resp_len, &sw1, &sw2);
+  secure_memzero(apdu, sizeof(apdu));
+  secure_memzero(resp, sizeof(resp));
+  if (io_err != SEC1210_OK)
+    return;
+  if (status_ok())
+    job_ok = true;
+  else
+    note_sw("PIN rejected");
+}
+
+static void job_list(void) {
+  secret_count = 0;
+  list_truncated = false;
+  uint8_t p2 = SEEDKEEPER_P2_INIT;
+  for (int i = 0; i < 32; i++) {
+    uint8_t apdu[8];
+    uint8_t resp[256];
+    size_t resp_len = 0;
+    size_t apdu_len = seedkeeper_apdu_list(p2, apdu, sizeof(apdu));
+    io_err = seedkeeper_session_transmit(apdu, apdu_len, resp, sizeof(resp),
+                                         &resp_len, &sw1, &sw2);
+    if (io_err != SEC1210_OK) {
+      secure_memzero(resp, sizeof(resp));
+      return;
+    }
+    if (sw1 == 0x9C && sw2 == 0x12) {
+      secure_memzero(resp, sizeof(resp));
+      job_ok = true;
+      return;
+    }
+    if (!status_ok()) {
+      note_sw("List failed");
+      secure_memzero(resp, sizeof(resp));
+      return;
+    }
+    seedkeeper_header_t header;
+    if (seedkeeper_header_parse(resp, resp_len, &header) &&
+        seedkeeper_can_passphrase(&header)) {
+      if (secret_count < MAX_SECRETS)
+        secrets[secret_count++] = header;
+      else
+        list_truncated = true;
+    }
+    secure_memzero(resp, sizeof(resp));
+    p2 = SEEDKEEPER_P2_NEXT;
+  }
+  snprintf(note, sizeof(note), "The card kept listing secrets.");
+  io_err = SEC1210_ERR_PROTO;
+}
+
+static void job_export(void) {
+  if (export_index < 0 || export_index >= secret_count) {
+    io_err = SEC1210_ERR_ARG;
+    return;
+  }
+  uint16_t sid = secrets[export_index].id;
+  uint8_t apdu[16];
+  uint8_t resp[SEC1210_MAX_APDU];
+  uint8_t secret[SECRET_MAX];
+  size_t secret_len = 0;
+  size_t resp_len = 0;
+  uint8_t fingerprint[4] = {0};
+  bool have_header = false;
+  bool last = false;
+
+  size_t apdu_len =
+      seedkeeper_apdu_export(sid, SEEDKEEPER_P2_INIT, apdu, sizeof(apdu));
+  io_err = seedkeeper_session_transmit(apdu, apdu_len, resp, sizeof(resp),
+                                       &resp_len, &sw1, &sw2);
+  if (io_err != SEC1210_OK || !status_ok()) {
+    if (io_err == SEC1210_OK)
+      note_sw("Export failed");
+    goto out;
+  }
+  seedkeeper_header_t header;
+  if (!seedkeeper_header_parse(resp, resp_len, &header) ||
+      !seedkeeper_can_passphrase(&header)) {
+    snprintf(note, sizeof(note), "This secret is not a passphrase.");
+    goto out;
+  }
+  memcpy(fingerprint, header.fingerprint, 4);
+  have_header = true;
+  secure_memzero(&header, sizeof(header));
+
+  for (int i = 0; i < 8 && !last; i++) {
+    apdu_len =
+        seedkeeper_apdu_export(sid, SEEDKEEPER_P2_NEXT, apdu, sizeof(apdu));
+    resp_len = 0;
+    io_err = seedkeeper_session_transmit(apdu, apdu_len, resp, sizeof(resp),
+                                         &resp_len, &sw1, &sw2);
+    if (io_err != SEC1210_OK || !status_ok()) {
+      if (io_err == SEC1210_OK)
+        note_sw("Export failed");
+      goto out;
+    }
+    const uint8_t *chunk = NULL;
+    size_t chunk_len = 0;
+    if (!seedkeeper_export_chunk(resp, resp_len, &chunk, &chunk_len, &last) ||
+        secret_len + chunk_len > sizeof(secret)) {
+      snprintf(note, sizeof(note), "The secret does not fit.");
+      goto out;
+    }
+    if (chunk_len)
+      memcpy(secret + secret_len, chunk, chunk_len);
+    secret_len += chunk_len;
+  }
+  if (!last || !have_header) {
+    snprintf(note, sizeof(note), "The export stopped early.");
+    goto out;
+  }
+
+  uint8_t digest[32];
+  if (wally_sha256(secret, secret_len, digest, sizeof(digest)) != WALLY_OK ||
+      !seedkeeper_fingerprint_equal(fingerprint, digest)) {
+    snprintf(note, sizeof(note),
+             "Fingerprint does not match. The secret was not loaded.");
+    secure_memzero(digest, sizeof(digest));
+    goto out;
+  }
+  secure_memzero(digest, sizeof(digest));
+
+  const uint8_t *password = NULL;
+  size_t password_len = 0;
+  if (seedkeeper_password_decode(secret, secret_len, &password,
+                                 &password_len) != SEEDKEEPER_DECODE_OK ||
+      password_len >= sizeof(passphrase)) {
+    snprintf(note, sizeof(note), "This secret is not a passphrase.");
+    goto out;
+  }
+  secure_memzero(passphrase, sizeof(passphrase));
+  memcpy(passphrase, password, password_len);
+  passphrase[password_len] = '\0';
+  job_ok = true;
+
+out:
+  secure_memzero(secret, sizeof(secret));
+  secure_memzero(resp, sizeof(resp));
+  secure_memzero(apdu, sizeof(apdu));
+  secure_memzero(fingerprint, sizeof(fingerprint));
+}
+
+static void worker(void) {
+  job_ok = false;
+  ask_pin = false;
+  note[0] = '\0';
+  sw1 = 0;
+  sw2 = 0;
+  io_err = SEC1210_OK;
+  if (job == JOB_OPEN)
+    job_open();
+  else if (job == JOB_PIN)
+    job_pin();
+  else if (job == JOB_LIST)
+    job_list();
+  else
+    job_export();
+}
+
+static void show_pin(void);
+static void clear_pin_ui(void);
+static void start_job(int which, const char *status);
+
+static void show_pin_after_error(void) {
+  if (screen)
+    show_pin();
+}
+
+static void after_open(void) {
+  if (!job_ok) {
+    show_note(false);
+    reader_down();
+    return;
+  }
+  show_pin();
+}
+
+static void after_pin(void) {
+  if (ask_pin) {
+    clear_pin_ui();
+    dialog_show_error_timeout(note, show_pin_after_error, 0);
+    return;
+  }
+  if (!job_ok) {
+    show_note(false);
+    if (io_err != SEC1210_OK || (sw1 == 0x9C && sw2 == 0x0C))
+      reader_down();
+    return;
+  }
+  start_job(JOB_LIST, "Reading the list...");
+}
+
+static void after_list(void) {
+  if (ask_pin) {
+    clear_pin_ui();
+    dialog_show_error_timeout(note, show_pin_after_error, 0);
+    return;
+  }
+  if (!job_ok) {
+    show_note(false);
+    if (io_err != SEC1210_OK)
+      reader_down();
+    return;
+  }
+  if (secret_count == 0) {
+    snprintf(note, sizeof(note),
+             "No password on the card can be exported in the clear.");
+    show_note(false);
+    return;
+  }
+  show_menu();
+}
+
+static void deliver(void) {
+  char local[PASS_MAX];
+  smartcard_passphrase_cb loaded = loaded_callback;
+  memcpy(local, passphrase, sizeof(local));
+  smartcard_passphrase_destroy();
+  if (loaded)
+    loaded(local);
+  secure_memzero(local, sizeof(local));
+}
+
+static void after_export(void) {
+  if (ask_pin) {
+    wipe_loaded();
+    clear_pin_ui();
+    dialog_show_error_timeout(note, show_pin_after_error, 0);
+    return;
+  }
+  if (!job_ok) {
+    wipe_loaded();
+    bool keep = io_err == SEC1210_OK && seedkeeper_session_is_open();
+    show_note(keep);
+    if (!keep)
+      reader_down();
+    return;
+  }
+  deliver();
+}
+
+static void poll_cb(lv_timer_t *timer) {
+  (void)timer;
+  if (!done)
+    return;
+  worker_task_wait();
+  running = false;
+  lv_timer_del(poll_timer);
+  poll_timer = NULL;
+  if (job == JOB_OPEN)
+    after_open();
+  else if (job == JOB_PIN)
+    after_pin();
+  else if (job == JOB_LIST)
+    after_list();
+  else
+    after_export();
+}
+
+static void start_job(int which, const char *status) {
+  if (running || !body)
+    return;
+  job = which;
+  if (secret_menu)
+    ui_menu_hide(secret_menu);
+  chrome(true);
+  if (title)
+    lv_label_set_text(title, "Passphrase");
+  lv_obj_clean(body);
+  lv_obj_clear_flag(body, LV_OBJ_FLAG_HIDDEN);
+  theme_create_label(body, status, true);
+  done = false;
+  if (!worker_task_start_io("seedkeeper", PASS_STACK, worker, &done)) {
+    lv_obj_clean(body);
+    theme_create_label(body, "Could not start the card task.", true);
+    return;
+  }
+  running = true;
+  poll_timer = lv_timer_create(poll_cb, 100, NULL);
+}
+
+static void clear_pin_ui(void) {
+  ui_text_input_destroy(&pin_input);
+  if (pin_host) {
+    lv_obj_del(pin_host);
+    pin_host = NULL;
+  }
+}
+
+static void pin_submit(lv_timer_t *timer) {
+  (void)timer;
+  if (running || !pin_input.textarea)
+    return;
+  const char *text = lv_textarea_get_text(pin_input.textarea);
+  size_t n = text ? strlen(text) : 0;
+  if (n < SEEDKEEPER_PIN_MIN || n > SEEDKEEPER_PIN_MAX) {
+    dialog_show_error_timeout("The PIN is 4 to 16 characters.", NULL, 0);
+    return;
+  }
+  memcpy(pin, text, n);
+  pin_len = n;
+  clear_pin_ui();
+  start_job(JOB_PIN, "Checking the PIN...");
+}
+
+static void pin_ready(lv_event_t *e) {
+  (void)e;
+  ui_oneshot_start(&defer, pin_submit, 0);
+}
+
+static void show_pin(void) {
+  chrome(true);
+  if (title)
+    lv_label_set_text(title, "Card PIN");
+  if (secret_menu)
+    ui_menu_hide(secret_menu);
+  lv_obj_add_flag(body, LV_OBJ_FLAG_HIDDEN);
+  clear_pin_ui();
+  pin_host = lv_obj_create(screen);
+  lv_obj_remove_style_all(pin_host);
+  lv_obj_set_size(pin_host, LV_PCT(100), LV_PCT(100));
+  ui_text_input_create(&pin_input, pin_host, "4 to 16 characters", true,
+                       pin_ready);
+  lv_textarea_set_max_length(pin_input.textarea, SEEDKEEPER_PIN_MAX);
+  if (back_btn)
+    lv_obj_move_foreground(back_btn);
+  if (title)
+    lv_obj_move_foreground(title);
+}
+
+static void pick_now(lv_timer_t *timer) {
+  (void)timer;
+  if (!secret_menu || running)
+    return;
+  int index = ui_menu_get_selected(secret_menu);
+  if (index < 0 || index >= secret_count)
+    return;
+  export_index = index;
+  ui_menu_hide(secret_menu);
+  start_job(JOB_EXPORT, "Reading the secret...");
+}
+
+static void pick_secret(void) { ui_oneshot_start(&defer, pick_now, 0); }
+
+static void show_menu(void) {
+  chrome(false);
+  lv_obj_add_flag(body, LV_OBJ_FLAG_HIDDEN);
+  if (secret_menu) {
+    ui_menu_destroy(secret_menu);
+    secret_menu = NULL;
+  }
+  secret_menu = ui_menu_create(
+      screen, list_truncated ? "First 16 secrets" : "Passwords",
+      return_callback);
+  for (int i = 0; i < secret_count; i++) {
+    char fallback[24];
+    const char *name = secrets[i].label;
+    if (!name[0]) {
+      snprintf(fallback, sizeof(fallback), "Secret %u", secrets[i].id);
+      name = fallback;
+    }
+    ui_menu_add_entry(secret_menu, name, pick_secret);
+  }
+  ui_menu_show(secret_menu);
+}
+
+static void list_now(lv_timer_t *timer) {
+  (void)timer;
+  show_menu();
+}
+
+static void back_cb(lv_event_t *e) {
+  (void)e;
+  if (return_callback)
+    return_callback();
+}
+
+void smartcard_passphrase_create(lv_obj_t *parent, void (*return_cb)(void),
+                                 smartcard_passphrase_cb loaded_cb) {
+  session_cleanup_register(smartcard_passphrase_destroy);
+  return_callback = return_cb;
+  loaded_callback = loaded_cb;
+  screen = theme_create_page_container(parent);
+  back_btn = ui_create_back_button(screen, back_cb);
+  title = theme_create_page_title(screen, "Passphrase");
+
+  int32_t top = theme_corner_button_height() + theme_default_padding();
+  body = theme_create_page_container(screen);
+  lv_obj_set_size(body, LV_PCT(100), theme_screen_height() - top);
+  lv_obj_align(body, LV_ALIGN_BOTTOM_MID, 0, 0);
+  lv_obj_set_style_pad_all(body, theme_default_padding(), 0);
+  lv_obj_set_style_pad_gap(body, theme_small_padding(), 0);
+  lv_obj_set_flex_flow(body, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_flex_align(body, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
+                        LV_FLEX_ALIGN_CENTER);
+  lv_obj_add_flag(body, LV_OBJ_FLAG_SCROLLABLE);
+
+  start_job(JOB_OPEN, "Opening a secure session...");
+}
+
+void smartcard_passphrase_destroy(void) {
+  session_cleanup_unregister(smartcard_passphrase_destroy);
+  ui_oneshot_cancel(&defer);
+  if (running) {
+    worker_task_wait();
+    running = false;
+  }
+  if (poll_timer) {
+    lv_timer_del(poll_timer);
+    poll_timer = NULL;
+  }
+  if (secret_menu) {
+    ui_menu_destroy(secret_menu);
+    secret_menu = NULL;
+  }
+  clear_pin_ui();
+  reader_down();
+  if (screen) {
+    lv_obj_del(screen);
+    screen = NULL;
+  }
+  body = NULL;
+  title = NULL;
+  back_btn = NULL;
+  return_callback = NULL;
+  loaded_callback = NULL;
+  secure_memzero(pin, sizeof(pin));
+  pin_len = 0;
+  secure_memzero(secrets, sizeof(secrets));
+  secret_count = 0;
+  wipe_loaded();
+}
+
+#else
+
+void smartcard_passphrase_create(lv_obj_t *parent, void (*return_cb)(void),
+                                 smartcard_passphrase_cb loaded_cb) {
+  (void)parent;
+  (void)return_cb;
+  (void)loaded_cb;
+}
+
+void smartcard_passphrase_destroy(void) {}
+
+#endif

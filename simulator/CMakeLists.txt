@@ -324,7 +324,6 @@ set(APP_PAGE_SOURCES
     ${APP_PAGES_DIR}/screensaver.c
     ${APP_PAGES_DIR}/session_lock.c
     ${APP_PAGES_DIR}/store_descriptor.c
-    ${APP_PAGES_DIR}/store_mnemonic.c
     # Scan page
     ${APP_PAGES_DIR}/scan/scan.c
     ${APP_PAGES_DIR}/scan/scan_handlers.c

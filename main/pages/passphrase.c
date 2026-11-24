@@ -10,6 +10,10 @@
 #include <lvgl.h>
 #include <stdio.h>
 
+#if defined(CONFIG_KERN_BOARD_P4_PICO) && !defined(SIMULATOR)
+#include "smartcard/smartcard_passphrase.h"
+#endif
+
 static lv_obj_t *passphrase_screen = NULL;
 static ui_text_input_t text_input = {0};
 static void (*return_callback)(void) = NULL;
@@ -39,6 +43,29 @@ static void scan_key_cb(void *user_data) {
                                passphrase_page_show, NULL};
   text_input_scan_start(&cfg);
 }
+
+#if defined(CONFIG_KERN_BOARD_P4_PICO) && !defined(SIMULATOR)
+static void keyboard_ready_cb(lv_event_t *e);
+
+static void seedkeeper_back(void) {
+  smartcard_passphrase_destroy();
+  passphrase_page_show();
+}
+
+static void seedkeeper_loaded(const char *passphrase) {
+  if (text_input.textarea && passphrase)
+    lv_textarea_set_text(text_input.textarea, passphrase);
+  passphrase_page_show();
+  keyboard_ready_cb(NULL);
+}
+
+static void from_seedkeeper_cb(lv_event_t *e) {
+  (void)e;
+  passphrase_page_hide();
+  smartcard_passphrase_create(lv_screen_active(), seedkeeper_back,
+                              seedkeeper_loaded);
+}
+#endif
 
 static void keyboard_ready_cb(lv_event_t *e) {
   (void)e;
@@ -91,6 +118,15 @@ void passphrase_page_create(lv_obj_t *parent, void (*return_cb)(void),
   ui_text_input_create(&text_input, passphrase_screen, "passphrase", true,
                        keyboard_ready_cb);
   ui_text_input_enable_scan(&text_input, scan_key_cb, NULL);
+
+#if defined(CONFIG_KERN_BOARD_P4_PICO) && !defined(SIMULATOR)
+  lv_obj_t *card_btn =
+      theme_create_button(passphrase_screen, "From Seedkeeper", false);
+  lv_obj_set_width(card_btn, LV_PCT(80));
+  lv_obj_align_to(card_btn, text_input.textarea, LV_ALIGN_OUT_BOTTOM_LEFT, 0,
+                  theme_default_padding());
+  lv_obj_add_event_cb(card_btn, from_seedkeeper_cb, LV_EVENT_CLICKED, NULL);
+#endif
 }
 
 void passphrase_page_show(void) {
@@ -109,6 +145,9 @@ void passphrase_page_hide(void) {
 
 void passphrase_page_destroy(void) {
   session_cleanup_unregister(passphrase_page_destroy);
+#if defined(CONFIG_KERN_BOARD_P4_PICO) && !defined(SIMULATOR)
+  smartcard_passphrase_destroy();
+#endif
   ui_text_input_destroy(&text_input);
   if (passphrase_screen) {
     lv_obj_del(passphrase_screen);
