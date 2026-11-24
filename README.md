@@ -1,4 +1,4 @@
-> **Fork of Kern, for the ESP32-P4-Pico.** The Pico and Seedkeeper changes are on the `kern-pico-v1` branch. `master` stays the upstream Kern line. Developed and tested on the Waveshare ESP32-P4-Pico with the 5-DSI-TOUCH-A and Stephen Rothery's Smartcard Hat, silkscreen "RPI Smartcard Hat v1.0.8" (Microchip SEC1210, UART, 115200 8N1). It reads a Satochip Seedkeeper. This is a development build. It has not been audited. Do not use it with real funds.
+> **Fork of Kern, for the ESP32-P4-Pico.**  Developed and tested on the Waveshare ESP32-P4-Pico with the 5-DSI-TOUCH-A and Stephen Rothery's Smartcard Hat, silkscreen "RPI Smartcard Hat v1.0.8" (Microchip SEC1210, UART, 115200 8N1). It reads a Satochip Seedkeeper. This is a development build. It has not been audited. Do not use it with real funds.
 >
 > Wiring: hat TX to Pico GPIO22, hat RX to Pico GPIO20, hat 5 V to Pico VSYS, hat GND to Pico GND. Do not also power the hat from its USB-C when VSYS is jumpered. The hat has no reverse-polarity protection.
 >
