@@ -2,6 +2,8 @@
 
 #include <string.h>
 
+static bool no_nul(const uint8_t *p, size_t n);
+
 static const uint8_t SEEDKEEPER_AID[SEEDKEEPER_AID_LEN] = {
     'S', 'e', 'e', 'd', 'K', 'e', 'e', 'p', 'e', 'r'};
 
@@ -132,6 +134,41 @@ bool seedkeeper_can_passphrase(const seedkeeper_header_t *header) {
 
 bool seedkeeper_can_delete(const seedkeeper_header_t *header) {
   return header && header->type != SEEDKEEPER_TYPE_AUTHENTIKEY;
+}
+
+bool seedkeeper_can_descriptor(const seedkeeper_header_t *header) {
+  return header && header->type == SEEDKEEPER_TYPE_DESCRIPTOR &&
+         header->export_rights == SEEDKEEPER_EXPORT_ALLOWED;
+}
+
+seedkeeper_decode_t seedkeeper_descriptor_decode(const uint8_t *secret,
+                                                 size_t len,
+                                                 const uint8_t **text,
+                                                 size_t *text_len) {
+  if (!secret || !text || !text_len || len < 2)
+    return SEEDKEEPER_DECODE_MALFORMED;
+  size_t n = ((size_t)secret[0] << 8) | secret[1];
+  if (n == 0 || n > SEEDKEEPER_DESCRIPTOR_MAX || len != 2 + n ||
+      !no_nul(secret + 2, n))
+    return SEEDKEEPER_DECODE_MALFORMED;
+  *text = secret + 2;
+  *text_len = n;
+  return SEEDKEEPER_DECODE_OK;
+}
+
+size_t seedkeeper_secret_encode_descriptor(const char *text, uint8_t *out,
+                                           size_t cap) {
+  if (!text)
+    return 0;
+  size_t n = strlen(text);
+  if (n == 0 || n > SEEDKEEPER_DESCRIPTOR_MAX)
+    return 0;
+  if (!out || cap < 2 + n)
+    return 0;
+  out[0] = (uint8_t)(n >> 8);
+  out[1] = (uint8_t)n;
+  memcpy(out + 2, text, n);
+  return 2 + n;
 }
 
 bool seedkeeper_export_chunk(const uint8_t *buf, size_t len,

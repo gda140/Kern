@@ -25,6 +25,8 @@
 #define SEEDKEEPER_TYPE_ELECTRUM 0x40
 #define SEEDKEEPER_TYPE_PASSWORD 0x90
 #define SEEDKEEPER_TYPE_AUTHENTIKEY 0xA0
+#define SEEDKEEPER_TYPE_DESCRIPTOR 0xC1
+#define SEEDKEEPER_DESCRIPTOR_MAX 2048
 #define SEEDKEEPER_SUBTYPE_DEFAULT 0x00
 #define SEEDKEEPER_SUBTYPE_BIP39 0x01
 #define SEEDKEEPER_EXPORT_ALLOWED 0x01
@@ -106,6 +108,9 @@ bool seedkeeper_can_passphrase(const seedkeeper_header_t *header);
 /* Any listed secret except the card's authentikey certificate. */
 bool seedkeeper_can_delete(const seedkeeper_header_t *header);
 
+/* Plaintext-exportable Descriptor secret (type 0xC1). */
+bool seedkeeper_can_descriptor(const seedkeeper_header_t *header);
+
 /*
  * One plaintext-export chunk: chunk_size(2) || chunk || optional signature.
  * `last` is set when the signature trailer is present. `chunk` points into
@@ -182,6 +187,18 @@ size_t seedkeeper_apdu_import_data(uint8_t p2, const uint8_t *chunk,
 /* FINAL response: sid || fingerprint[4]. */
 bool seedkeeper_import_result(const uint8_t *resp, size_t len, uint16_t *id,
                               uint8_t fingerprint[4]);
+/*
+ * Descriptor body: length u16be || UTF-8 text. The length counts the text
+ * only. Empty text, an interior NUL, or more than SEEDKEEPER_DESCRIPTOR_MAX
+ * bytes is rejected. `text` points into `secret`.
+ */
+seedkeeper_decode_t seedkeeper_descriptor_decode(const uint8_t *secret,
+                                                 size_t len,
+                                                 const uint8_t **text,
+                                                 size_t *text_len);
+size_t seedkeeper_secret_encode_descriptor(const char *text, uint8_t *out,
+                                           size_t cap);
+
 /* INS 0xA5. Removes one secret. The secret itself is not read. */
 size_t seedkeeper_apdu_reset(uint16_t sid, uint8_t *out, size_t cap);
 

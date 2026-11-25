@@ -433,6 +433,47 @@ static void test_password_decode(void) {
          seedkeeper_can_delete(&header));
 }
 
+static void test_descriptor_secret(void) {
+  uint8_t body[8];
+  size_t n = seedkeeper_secret_encode_descriptor("ab", body, sizeof(body));
+  const uint8_t *text = NULL;
+  size_t tlen = 0;
+  expect("descriptor encode", n == 4 && body[0] == 0x00 && body[1] == 0x02 &&
+                                  body[2] == 'a' && body[3] == 'b');
+  expect("descriptor decode",
+         seedkeeper_descriptor_decode(body, n, &text, &tlen) ==
+                 SEEDKEEPER_DECODE_OK &&
+             tlen == 2 && text[0] == 'a' && text[1] == 'b');
+  expect("empty descriptor rejected",
+         seedkeeper_secret_encode_descriptor("", body, sizeof(body)) == 0);
+  expect("null descriptor rejected",
+         seedkeeper_secret_encode_descriptor(NULL, body, sizeof(body)) == 0);
+
+  const uint8_t short_body[] = {0x00, 0x02, 'a'};
+  expect("short descriptor rejected",
+         seedkeeper_descriptor_decode(short_body, sizeof(short_body), &text,
+                                      &tlen) == SEEDKEEPER_DECODE_MALFORMED);
+  const uint8_t nul_body[] = {0x00, 0x03, 'a', 0x00, 'b'};
+  expect("descriptor nul rejected",
+         seedkeeper_descriptor_decode(nul_body, sizeof(nul_body), &text,
+                                      &tlen) == SEEDKEEPER_DECODE_MALFORMED);
+  const uint8_t extra[] = {0x00, 0x01, 'a', 'b'};
+  expect("descriptor tail rejected",
+         seedkeeper_descriptor_decode(extra, sizeof(extra), &text, &tlen) ==
+             SEEDKEEPER_DECODE_MALFORMED);
+
+  seedkeeper_header_t header = {0};
+  header.type = SEEDKEEPER_TYPE_DESCRIPTOR;
+  header.export_rights = SEEDKEEPER_EXPORT_ALLOWED;
+  expect("descriptor can load", seedkeeper_can_descriptor(&header));
+  header.export_rights = 0x02;
+  expect("secure-only descriptor stays", !seedkeeper_can_descriptor(&header));
+  header.type = SEEDKEEPER_TYPE_BIP39;
+  header.export_rights = SEEDKEEPER_EXPORT_ALLOWED;
+  expect("mnemonic is not a descriptor", !seedkeeper_can_descriptor(&header));
+  expect("null descriptor header", !seedkeeper_can_descriptor(NULL));
+}
+
 int main(void) {
   test_slot_status_frame();
   test_nak_and_prefix();
@@ -444,6 +485,7 @@ int main(void) {
   test_secret_decode();
   test_secret_import();
   test_password_decode();
+  test_descriptor_secret();
   printf("%d passed, %d failed\n", passed, failed);
   return failed ? 1 : 0;
 }

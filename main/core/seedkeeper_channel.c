@@ -4,9 +4,9 @@
 
 #include "seedkeeper.h"
 #include "seedkeeper_sc.h"
+#include "crypto_utils.h"
 #include "../utils/secure_mem.h"
 
-#include <esp_random.h>
 #include <mbedtls/ecp.h>
 #include <string.h>
 #include <wally_core.h>
@@ -17,8 +17,9 @@ static bool session_open;
 
 static int session_rng(void *ctx, unsigned char *out, size_t len) {
   (void)ctx;
-  esp_fill_random(out, len);
-  return 0;
+  if (!out || len == 0)
+    return -1;
+  return crypto_random_bytes(out, len) == CRYPTO_OK ? 0 : -1;
 }
 
 static bool der_rs(const uint8_t *sig, size_t len, uint8_t r[32],
@@ -183,7 +184,8 @@ static sec1210_err_t transmit_once(const uint8_t *apdu, size_t apdu_len,
   uint8_t frame[16 + 2 + SEEDKEEPER_SC_PLAIN_MAX + 16 + 2 + SEEDKEEPER_SC_MAC_LEN];
   uint8_t outer[5 + sizeof(frame)];
   uint8_t raw[SEC1210_MAX_APDU];
-  esp_fill_random(prefix, sizeof(prefix));
+  if (crypto_random_bytes(prefix, sizeof(prefix)) != CRYPTO_OK)
+    return SEC1210_ERR_IO;
   size_t framed =
       seedkeeper_sc_seal(&session, prefix, apdu, apdu_len, frame, sizeof(frame));
   secure_memzero(prefix, sizeof(prefix));

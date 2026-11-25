@@ -16,6 +16,9 @@
 #include "../shared/descriptor_loader.h"
 #include "../store_descriptor.h"
 #include "registered_descriptors.h"
+#if defined(CONFIG_KERN_BOARD_P4_PICO) && !defined(SIMULATOR)
+#include "../smartcard/smartcard_descriptor.h"
+#endif
 #include <bbqr.h>
 #include <lvgl.h>
 #include <stdlib.h>
@@ -352,14 +355,57 @@ static void load_from_sd_cb(void) {
   load_descriptor_storage_page_show();
 }
 
+#if defined(CONFIG_KERN_BOARD_P4_PICO) && !defined(SIMULATOR)
+static void seedkeeper_load_done(void) {
+  descriptor_manager_page_show();
+  refresh_menu_visibility();
+}
+
+static void seedkeeper_validation_cb(descriptor_validation_result_t result,
+                                     void *user_data) {
+  (void)user_data;
+  if (result == VALIDATION_SUCCESS) {
+    smartcard_descriptor_load_destroy();
+    descriptor_changed = true;
+    descriptor_loader_show_loaded_menu(seedkeeper_load_done);
+    return;
+  }
+  descriptor_loader_show_error(result);
+  smartcard_descriptor_load_resume();
+}
+
+static void seedkeeper_loaded(const char *text) {
+  descriptor_loader_process_string(text, seedkeeper_validation_cb, NULL);
+}
+
+static void seedkeeper_load_back(void) {
+  smartcard_descriptor_load_destroy();
+  descriptor_manager_page_show();
+}
+
+static void load_from_seedkeeper_cb(void) {
+  descriptor_loader_destroy_source_menu();
+  descriptor_manager_page_hide();
+  smartcard_descriptor_load_create(lv_screen_active(), seedkeeper_load_back,
+                                   seedkeeper_loaded);
+}
+#endif
+
 static void load_source_back_cb(void) {
   descriptor_loader_destroy_source_menu();
 }
 
 static void load_descriptor_cb(void) {
+#if defined(CONFIG_KERN_BOARD_P4_PICO) && !defined(SIMULATOR)
   descriptor_loader_show_source_menu(manager_screen, load_from_qr_cb,
                                      load_from_flash_cb, load_from_sd_cb,
+                                     load_from_seedkeeper_cb,
                                      load_source_back_cb);
+#else
+  descriptor_loader_show_source_menu(manager_screen, load_from_qr_cb,
+                                     load_from_flash_cb, load_from_sd_cb, NULL,
+                                     load_source_back_cb);
+#endif
 }
 
 /* ---------- Save callbacks ---------- */
@@ -439,6 +485,28 @@ static void registered_desc_return_cb(void) {
   refresh_menu_visibility();
 }
 
+#if defined(CONFIG_KERN_BOARD_P4_PICO) && !defined(SIMULATOR)
+static void seedkeeper_save_back(void) {
+  smartcard_descriptor_save_destroy();
+  descriptor_manager_page_show();
+}
+
+static void save_descriptor_to_seedkeeper(size_t index) {
+  const registry_entry_t *entry = registry_get(index);
+  char *text = NULL;
+  if (!entry || !descriptor_string_from_descriptor(entry->desc, &text)) {
+    dialog_show_error_timeout("Failed to export descriptor", NULL, 2000);
+    descriptor_manager_page_show();
+    return;
+  }
+  const char *label = entry->label[0] ? entry->label : entry->id;
+  descriptor_manager_page_hide();
+  smartcard_descriptor_save_create(lv_screen_active(), seedkeeper_save_back,
+                                   text, label);
+  free(text);
+}
+#endif
+
 static void registered_desc_action_cb(size_t index,
                                       registered_descriptor_action_t action) {
   const registry_entry_t *entry = registry_get(index);
@@ -470,6 +538,11 @@ static void registered_desc_action_cb(size_t index,
     pending_save_descriptor_index = (int)index;
     descriptor_manager_page_show();
     show_save_type_menu(STORAGE_SD);
+    break;
+  case REGISTERED_DESCRIPTOR_ACTION_SAVE_SEEDKEEPER:
+#if defined(CONFIG_KERN_BOARD_P4_PICO) && !defined(SIMULATOR)
+    save_descriptor_to_seedkeeper(index);
+#endif
     break;
   }
 }

@@ -161,6 +161,12 @@ static void save_sd_cb(void) {
   emit_action(REGISTERED_DESCRIPTOR_ACTION_SAVE_SD);
 }
 
+#if defined(CONFIG_KERN_BOARD_P4_PICO) && !defined(SIMULATOR)
+static void save_seedkeeper_cb(void) {
+  emit_action(REGISTERED_DESCRIPTOR_ACTION_SAVE_SEEDKEEPER);
+}
+#endif
+
 static void remove_confirmed_cb(bool confirmed, void *user_data) {
   (void)user_data;
   int idx = pending_remove_index;
@@ -250,6 +256,9 @@ static void show_action_menu(void) {
   ui_menu_add_entry(action_menu, "Export QR Code", export_qr_cb);
   ui_menu_add_entry(action_menu, "Save to Flash", save_flash_cb);
   ui_menu_add_entry(action_menu, "Save to SD Card", save_sd_cb);
+#if defined(CONFIG_KERN_BOARD_P4_PICO) && !defined(SIMULATOR)
+  ui_menu_add_entry(action_menu, "To Seedkeeper", save_seedkeeper_cb);
+#endif
   if (entry->persisted)
     ui_menu_add_entry(action_menu, "De-register and Delete",
                       deregister_action_cb);

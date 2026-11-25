@@ -108,8 +108,34 @@ void passphrase_page_create(lv_obj_t *parent, void (*return_cb)(void),
   // Screen
   passphrase_screen = theme_create_page_container(lv_screen_active());
 
-  // Create title label
-  theme_create_page_title(passphrase_screen, "Enter Passphrase");
+  // The loaded seed's fingerprint stays in the title band while the
+  // passphrase is typed. It is the wallet as it is now; the confirm
+  // dialog shows what the passphrase changes it to.
+  lv_obj_t *band = lv_obj_create(passphrase_screen);
+  lv_obj_remove_style_all(band);
+  lv_obj_set_width(band, LV_HOR_RES - 2 * (theme_small_padding() +
+                                           theme_corner_button_width()));
+  lv_obj_set_height(band, theme_corner_button_height());
+  int32_t band_y =
+      theme_small_padding() - lv_obj_get_style_pad_top(passphrase_screen, 0);
+  lv_obj_align(band, LV_ALIGN_TOP_MID, 0, band_y);
+  lv_obj_set_style_pad_all(band, 0, 0);
+  lv_obj_set_style_pad_row(band, 0, 0);
+  lv_obj_set_flex_flow(band, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_flex_align(band, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
+                        LV_FLEX_ALIGN_CENTER);
+  lv_obj_clear_flag(band, LV_OBJ_FLAG_SCROLLABLE);
+
+  char hex[BIP32_KEY_FINGERPRINT_LEN * 2 + 1];
+  if (key_get_fingerprint_hex(hex)) {
+    char fp[32];
+    snprintf(fp, sizeof(fp), ICON_FINGERPRINT " %s", hex);
+    lv_obj_t *fp_label = theme_create_label(band, fp, false);
+    lv_obj_set_style_text_font(fp_label, theme_font_small(), 0);
+    lv_obj_set_style_text_color(fp_label, highlight_color(), 0);
+  }
+  lv_obj_t *heading = theme_create_label(band, "Enter Passphrase", true);
+  lv_obj_set_style_text_font(heading, theme_font_small(), 0);
 
   // Back button
   ui_create_back_button(passphrase_screen, back_btn_cb);

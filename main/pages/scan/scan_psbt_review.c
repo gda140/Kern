@@ -13,6 +13,9 @@
 #include "../../ui/theme_widgets.h"
 #include "../load_descriptor_storage.h"
 #include "../shared/descriptor_loader.h"
+#if defined(CONFIG_KERN_BOARD_P4_PICO) && !defined(SIMULATOR)
+#include "../smartcard/smartcard_descriptor.h"
+#endif
 #include "kern_wally.h"
 #include "psbt_sign_policy.h"
 #include "scan_internal.h"
@@ -222,10 +225,48 @@ void scan_psbt_resume_review(bool offer_descriptor) {
   owners_free(&owners);
 }
 
+#if defined(CONFIG_KERN_BOARD_P4_PICO) && !defined(SIMULATOR)
+static void psbt_seedkeeper_back(void) {
+  smartcard_descriptor_load_destroy();
+  scan_psbt_resume_review(false);
+}
+
+static void psbt_seedkeeper_done(void) { scan_psbt_resume_review(true); }
+
+static void psbt_seedkeeper_validation_cb(descriptor_validation_result_t result,
+                                          void *user_data) {
+  (void)user_data;
+  if (result == VALIDATION_SUCCESS) {
+    smartcard_descriptor_load_destroy();
+    descriptor_loader_show_loaded_menu(psbt_seedkeeper_done);
+    return;
+  }
+  descriptor_loader_show_error(result);
+  smartcard_descriptor_load_resume();
+}
+
+static void psbt_seedkeeper_loaded(const char *text) {
+  descriptor_loader_process_string(text, psbt_seedkeeper_validation_cb, NULL);
+}
+
+static void psbt_desc_seedkeeper_cb(void) {
+  descriptor_loader_destroy_source_menu();
+  smartcard_descriptor_load_create(lv_screen_active(), psbt_seedkeeper_back,
+                                   psbt_seedkeeper_loaded);
+}
+#endif
+
 static void psbt_offer_descriptor_cb(void) {
+#if defined(CONFIG_KERN_BOARD_P4_PICO) && !defined(SIMULATOR)
   descriptor_loader_show_source_menu(scan_ctx.screen, psbt_desc_qr_cb,
                                      psbt_desc_flash_cb, psbt_desc_sd_cb,
+                                     psbt_desc_seedkeeper_cb,
                                      psbt_desc_menu_back_cb);
+#else
+  descriptor_loader_show_source_menu(scan_ctx.screen, psbt_desc_qr_cb,
+                                     psbt_desc_flash_cb, psbt_desc_sd_cb, NULL,
+                                     psbt_desc_menu_back_cb);
+#endif
 }
 
 static void psbt_desc_menu_back_cb(void) {

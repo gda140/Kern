@@ -59,17 +59,20 @@ void descriptor_loader_show_loaded_menu(void (*done_cb)(void));
 
 /**
  * Show a source selection menu for loading descriptors.
- * Presents QR / Flash / SD Card options.
+ * Presents QR / Flash / SD Card options. On the Pico, `seedkeeper_cb`
+ * adds "From Seedkeeper"; NULL leaves that row out.
  *
- * @param parent   Parent LVGL object for the menu
- * @param qr_cb    Called when "From QR Code" is selected
- * @param flash_cb Called when "From Flash" is selected
- * @param sd_cb    Called when "From SD Card" is selected
- * @param back_cb  Called when user dismisses the menu
+ * @param parent         Parent LVGL object for the menu
+ * @param qr_cb          Called when "From QR Code" is selected
+ * @param flash_cb       Called when "From Flash" is selected
+ * @param sd_cb          Called when "From SD Card" is selected
+ * @param seedkeeper_cb  Called when "From Seedkeeper" is selected
+ * @param back_cb        Called when user dismisses the menu
  */
 void descriptor_loader_show_source_menu(lv_obj_t *parent, void (*qr_cb)(void),
                                         void (*flash_cb)(void),
                                         void (*sd_cb)(void),
+                                        void (*seedkeeper_cb)(void),
                                         void (*back_cb)(void));
 
 /**

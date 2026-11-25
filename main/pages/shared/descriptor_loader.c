@@ -753,6 +753,7 @@ static ui_menu_t *source_menu = NULL;
 void descriptor_loader_show_source_menu(lv_obj_t *parent, void (*qr_cb)(void),
                                         void (*flash_cb)(void),
                                         void (*sd_cb)(void),
+                                        void (*seedkeeper_cb)(void),
                                         void (*back_cb)(void)) {
   descriptor_loader_destroy_source_menu();
   session_cleanup_register(descriptor_loader_destroy_source_menu);
@@ -765,6 +766,13 @@ void descriptor_loader_show_source_menu(lv_obj_t *parent, void (*qr_cb)(void),
   ui_menu_add_entry_with_icon(source_menu, LV_SYMBOL_DRIVE, "From Flash",
                               flash_cb);
   ui_menu_add_entry_with_icon(source_menu, ICON_SD_CARD, "From SD Card", sd_cb);
+#if defined(CONFIG_KERN_BOARD_P4_PICO) && !defined(SIMULATOR)
+  if (seedkeeper_cb)
+    ui_menu_add_entry_with_icon(source_menu, ICON_KEY, "From Seedkeeper",
+                                seedkeeper_cb);
+#else
+  (void)seedkeeper_cb;
+#endif
   ui_menu_show(source_menu);
 }
 

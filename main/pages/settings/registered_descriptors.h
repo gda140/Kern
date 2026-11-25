@@ -8,6 +8,7 @@ typedef enum {
   REGISTERED_DESCRIPTOR_ACTION_EXPORT_QR,
   REGISTERED_DESCRIPTOR_ACTION_SAVE_FLASH,
   REGISTERED_DESCRIPTOR_ACTION_SAVE_SD,
+  REGISTERED_DESCRIPTOR_ACTION_SAVE_SEEDKEEPER,
 } registered_descriptor_action_t;
 
 typedef void (*registered_descriptor_action_cb_t)(
