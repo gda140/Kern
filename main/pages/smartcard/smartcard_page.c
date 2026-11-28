@@ -34,6 +34,10 @@ static volatile bool done;
 static bool running;
 static char report[REPORT_LEN];
 static bool offer_import;
+static bool offer_retry;
+static lv_timer_t *retry_timer = NULL;
+static int retry_countdown = 0;
+static lv_obj_t *retry_label = NULL;
 
 static void append(size_t *used, const char *line) {
   if (*used >= REPORT_LEN)
@@ -63,10 +67,12 @@ static void probe(void) {
   size_t used = 0;
   report[0] = '\0';
   offer_import = false;
+  offer_retry = false;
 
   sec1210_err_t err = sec1210_init();
   if (err != SEC1210_OK) {
     append(&used, sec1210_err_str(err));
+    offer_retry = true;
     done = true;
     return;
   }
@@ -76,6 +82,7 @@ static void probe(void) {
   if (err != SEC1210_OK) {
     append(&used, sec1210_err_str(err));
     sec1210_deinit();
+    offer_retry = true;
     done = true;
     return;
   }
@@ -95,6 +102,7 @@ static void probe(void) {
     if (sec1210_last_detail()[0])
       append(&used, sec1210_last_detail());
     sec1210_deinit();
+    offer_retry = true;
     done = true;
     return;
   }
@@ -111,10 +119,12 @@ static void probe(void) {
   err = sec1210_transmit(apdu, apdu_len, resp, sizeof(resp), &resp_len, &sw1,
                          &sw2);
   if (err != SEC1210_OK || sw1 != 0x90 || sw2 != 0x00) {
-    if (err != SEC1210_OK)
+    if (err != SEC1210_OK) {
       snprintf(line, sizeof(line), "Select failed: %s", sec1210_err_str(err));
-    else
+      offer_retry = true;
+    } else {
       snprintf(line, sizeof(line), "Not a Seedkeeper (SW %02X%02X).", sw1, sw2);
+    }
     append(&used, line);
     if (err != SEC1210_OK && sec1210_last_detail()[0])
       append(&used, sec1210_last_detail());
@@ -161,6 +171,29 @@ static void probe(void) {
 }
 
 static void start_probe(void);
+
+static void cancel_retry_timer(void) {
+  if (retry_timer) {
+    lv_timer_del(retry_timer);
+    retry_timer = NULL;
+  }
+  retry_label = NULL;
+}
+
+static void countdown_cb(lv_timer_t *timer) {
+  (void)timer;
+  retry_countdown--;
+  if (retry_countdown <= 0) {
+    cancel_retry_timer();
+    start_probe();
+    return;
+  }
+  if (retry_label) {
+    char buf[32];
+    snprintf(buf, sizeof(buf), "Retrying in %ds...", retry_countdown);
+    lv_label_set_text(retry_label, buf);
+  }
+}
 
 static void again_cb(lv_timer_t *timer) {
   (void)timer;
@@ -223,6 +256,13 @@ static void show_report(void) {
     lv_obj_add_event_cb(delete_button, delete_event, LV_EVENT_CLICKED, NULL);
   }
 
+  if (offer_retry) {
+    retry_countdown = 5;
+    retry_label = theme_create_label(body, "Retrying in 5s...", false);
+    lv_obj_set_width(retry_label, LV_PCT(100));
+    retry_timer = lv_timer_create(countdown_cb, 1000, NULL);
+  }
+
   lv_obj_t *button = theme_create_button(body, "Probe again", false);
   lv_obj_set_style_margin_top(button, theme_default_padding(), 0);
   lv_obj_add_event_cb(button, probe_again_event, LV_EVENT_CLICKED, NULL);
@@ -242,7 +282,12 @@ static void poll_cb(lv_timer_t *timer) {
 static void start_probe(void) {
   if (running || !body)
     return;
+  cancel_retry_timer();
   lv_obj_clean(body);
+  lv_obj_t *spinner = lv_spinner_create(body);
+  theme_apply_spinner(spinner);
+  lv_obj_set_size(spinner, 48, 48);
+  lv_spinner_set_anim_params(spinner, 1000, 60);
   status_label = theme_create_label(body, "Talking to the reader...", true);
   report[0] = '\0';
   done = false;
@@ -296,6 +341,7 @@ void smartcard_page_destroy(void) {
   smartcard_delete_destroy();
   smartcard_import_destroy();
   ui_oneshot_cancel(&again);
+  cancel_retry_timer();
   if (running) {
     worker_task_wait();
     running = false;

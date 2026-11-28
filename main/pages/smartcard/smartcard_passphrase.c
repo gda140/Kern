@@ -45,6 +45,10 @@ static lv_obj_t *body = NULL;
 static lv_obj_t *pin_host = NULL;
 static lv_timer_t *poll_timer = NULL;
 static lv_timer_t *watch_timer = NULL;
+static lv_timer_t *retry_timer = NULL;
+static lv_obj_t *loading_spinner = NULL;
+static int retry_countdown = 0;
+static lv_obj_t *retry_label = NULL;
 static volatile bool card_present;
 static ui_oneshot_t defer;
 static ui_text_input_t pin_input;
@@ -73,6 +77,50 @@ static void stop_watch(void) {
     return;
   lv_timer_del(watch_timer);
   watch_timer = NULL;
+}
+
+static void cancel_retry_timer(void) {
+  if (retry_timer) {
+    lv_timer_del(retry_timer);
+    retry_timer = NULL;
+  }
+  retry_label = NULL;
+}
+
+static void show_loading_spinner(void) {
+  if (!screen || loading_spinner)
+    return;
+  loading_spinner = lv_spinner_create(screen);
+  theme_apply_spinner(loading_spinner);
+  lv_obj_set_size(loading_spinner, 36, 36);
+  lv_spinner_set_anim_params(loading_spinner, 1000, 60);
+  lv_obj_add_flag(loading_spinner, LV_OBJ_FLAG_FLOATING);
+  lv_obj_align(loading_spinner, LV_ALIGN_TOP_MID, 0,
+               theme_corner_button_height());
+}
+
+static void hide_loading_spinner(void) {
+  if (loading_spinner) {
+    lv_obj_del(loading_spinner);
+    loading_spinner = NULL;
+  }
+}
+
+static void start_job(int which, const char *status);
+
+static void retry_countdown_cb(lv_timer_t *timer) {
+  (void)timer;
+  retry_countdown--;
+  if (retry_countdown <= 0) {
+    cancel_retry_timer();
+    start_job(JOB_OPEN, "Opening a secure session...");
+    return;
+  }
+  if (retry_label) {
+    char buf[32];
+    snprintf(buf, sizeof(buf), "Retrying in %ds...", retry_countdown);
+    lv_label_set_text(retry_label, buf);
+  }
 }
 
 static void reader_down(void) {
@@ -431,7 +479,6 @@ static void worker(void) {
 
 static void show_pin(void);
 static void clear_pin_ui(void);
-static void start_job(int which, const char *status);
 
 static void show_pin_after_error(void) {
   if (screen)
@@ -452,6 +499,7 @@ static void start_watch(void) {
 }
 
 static void after_open(void) {
+  hide_loading_spinner();
   if (!job_ok) {
     if (strcmp(note, "No card inserted.") == 0) {
       show_slot(SMARTCARD_SLOT_ABSENT);
@@ -461,6 +509,12 @@ static void after_open(void) {
     show_note(false);
     stop_watch();
     reader_down();
+    if (io_err != SEC1210_OK) {
+      retry_countdown = 5;
+      retry_label = theme_create_label(body, "Retrying in 5s...", false);
+      lv_obj_set_width(retry_label, LV_PCT(100));
+      retry_timer = lv_timer_create(retry_countdown_cb, 1000, NULL);
+    }
     return;
   }
   stop_watch();
@@ -560,9 +614,13 @@ static void poll_cb(lv_timer_t *timer) {
 static void start_job(int which, const char *status) {
   if (running || !body)
     return;
+  cancel_retry_timer();
+  hide_loading_spinner();
   job = which;
   if (which == JOB_OPEN) {
+    smartcard_slot_reset();
     show_slot(card_present ? SMARTCARD_SLOT_PRESENT : SMARTCARD_SLOT_ABSENT);
+    show_loading_spinner();
   } else if (which != JOB_WATCH) {
     smartcard_slot_notes(body);
     if (secret_menu)
@@ -572,6 +630,10 @@ static void start_job(int which, const char *status) {
       lv_label_set_text(title, "Passphrase");
     lv_obj_clean(body);
     lv_obj_clear_flag(body, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_t *spinner = lv_spinner_create(body);
+    theme_apply_spinner(spinner);
+    lv_obj_set_size(spinner, 48, 48);
+    lv_spinner_set_anim_params(spinner, 1000, 60);
     theme_create_label(body, status ? status : "", true);
   }
   done = false;
@@ -709,6 +771,8 @@ void smartcard_passphrase_create(lv_obj_t *parent, void (*return_cb)(void),
 void smartcard_passphrase_destroy(void) {
   session_cleanup_unregister(smartcard_passphrase_destroy);
   stop_watch();
+  cancel_retry_timer();
+  hide_loading_spinner();
   smartcard_slot_reset();
   ui_oneshot_cancel(&defer);
   if (running) {

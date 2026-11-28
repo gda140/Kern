@@ -25,6 +25,8 @@ void theme_set_btnmatrix_action(lv_obj_t *btnmatrix, uint32_t btn_id);
 // min_touch size. The knob overhangs the track by theme_slider_knob_pad() on
 // each side — callers must leave that much vertical clearance.
 void theme_apply_slider(lv_obj_t *slider);
+// Loading spinner: orange arc on a gray track.
+void theme_apply_spinner(lv_obj_t *spinner);
 lv_obj_t *theme_create_button(lv_obj_t *parent, const char *text,
                               bool is_primary);
 lv_obj_t *theme_create_label(lv_obj_t *parent, const char *text,

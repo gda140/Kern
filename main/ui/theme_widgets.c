@@ -260,6 +260,16 @@ void theme_apply_slider(lv_obj_t *slider) {
   lv_obj_set_style_pad_all(slider, theme_slider_knob_pad(), LV_PART_KNOB);
 }
 
+void theme_apply_spinner(lv_obj_t *spinner) {
+  if (!spinner)
+    return;
+
+  lv_obj_set_style_arc_color(spinner, secondary_color(), LV_PART_MAIN);
+  lv_obj_set_style_arc_opa(spinner, LV_OPA_COVER, LV_PART_MAIN);
+  lv_obj_set_style_arc_color(spinner, highlight_color(), LV_PART_INDICATOR);
+  lv_obj_set_style_arc_opa(spinner, LV_OPA_COVER, LV_PART_INDICATOR);
+}
+
 void theme_apply_btnmatrix_styles(lv_obj_t *btnmatrix) {
   if (!btnmatrix)
     return;
