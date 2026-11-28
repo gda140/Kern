@@ -5,7 +5,7 @@
  * the AES-128 key, HMAC-SHA1(shared_x, "sc_mac") is the MAC key. The shared
  * secret is the raw ECDH x-coordinate. The host uses odd AES-CBC counters
  * starting at 1 and steps by 2. The card's response is IV || ct_len ||
- * ciphertext and is not MACed.
+ * ciphertext and is not MACed. The primitives come from crypto_utils (PSA).
  */
 
 #ifndef SEEDKEEPER_SC_H
@@ -27,7 +27,9 @@ typedef struct {
   uint32_t counter;
 } seedkeeper_sc_t;
 
-void seedkeeper_sc_init(seedkeeper_sc_t *sc, const uint8_t shared_x[32]);
+/* Derive the session keys. Returns false (and leaves sc wiped) if the
+ * crypto backend fails. */
+bool seedkeeper_sc_init(seedkeeper_sc_t *sc, const uint8_t shared_x[32]);
 void seedkeeper_sc_wipe(seedkeeper_sc_t *sc);
 
 /* IV is iv_prefix || counter as uint32 big-endian. Returns the framed

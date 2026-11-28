@@ -10,17 +10,17 @@
 
 static bool ensure_psa_init(void) { return psa_crypto_init() == PSA_SUCCESS; }
 
-static psa_status_t aes_key_import(const uint8_t key[CRYPTO_AES_KEY_SIZE],
+static psa_status_t aes_key_import(const uint8_t *key, size_t key_len,
                                    psa_algorithm_t alg, psa_key_usage_t usage,
                                    mbedtls_svc_key_id_t *key_id) {
   psa_key_attributes_t attr = PSA_KEY_ATTRIBUTES_INIT;
   psa_set_key_usage_flags(&attr, usage);
   psa_set_key_algorithm(&attr, alg);
   psa_set_key_type(&attr, PSA_KEY_TYPE_AES);
-  return psa_import_key(&attr, key, CRYPTO_AES_KEY_SIZE, key_id);
+  return psa_import_key(&attr, key, key_len, key_id);
 }
 
-static int aes_cipher_run(const uint8_t key[CRYPTO_AES_KEY_SIZE],
+static int aes_cipher_run(const uint8_t *key, size_t key_len,
                           psa_algorithm_t alg, bool encrypt, const uint8_t *iv,
                           size_t iv_len, const uint8_t *input, size_t input_len,
                           uint8_t *output) {
@@ -30,8 +30,8 @@ static int aes_cipher_run(const uint8_t key[CRYPTO_AES_KEY_SIZE],
 
   mbedtls_svc_key_id_t key_id;
   psa_status_t st = aes_key_import(
-      key, alg, encrypt ? PSA_KEY_USAGE_ENCRYPT : PSA_KEY_USAGE_DECRYPT,
-      &key_id);
+      key, key_len, alg,
+      encrypt ? PSA_KEY_USAGE_ENCRYPT : PSA_KEY_USAGE_DECRYPT, &key_id);
   if (st != PSA_SUCCESS) {
     return CRYPTO_ERR_INTERNAL;
   }
@@ -123,8 +123,8 @@ int crypto_aes_ecb_encrypt(const uint8_t key[CRYPTO_AES_KEY_SIZE],
     return CRYPTO_ERR_INVALID_ARG;
   }
 
-  return aes_cipher_run(key, PSA_ALG_ECB_NO_PADDING, true, NULL, 0, input,
-                        input_len, output);
+  return aes_cipher_run(key, CRYPTO_AES_KEY_SIZE, PSA_ALG_ECB_NO_PADDING, true,
+                        NULL, 0, input, input_len, output);
 }
 
 int crypto_aes_ecb_decrypt(const uint8_t key[CRYPTO_AES_KEY_SIZE],
@@ -135,8 +135,8 @@ int crypto_aes_ecb_decrypt(const uint8_t key[CRYPTO_AES_KEY_SIZE],
     return CRYPTO_ERR_INVALID_ARG;
   }
 
-  return aes_cipher_run(key, PSA_ALG_ECB_NO_PADDING, false, NULL, 0, input,
-                        input_len, output);
+  return aes_cipher_run(key, CRYPTO_AES_KEY_SIZE, PSA_ALG_ECB_NO_PADDING, false,
+                        NULL, 0, input, input_len, output);
 }
 
 /* --- AES-256-CBC --- */
@@ -150,8 +150,8 @@ int crypto_aes_cbc_encrypt(const uint8_t key[CRYPTO_AES_KEY_SIZE],
     return CRYPTO_ERR_INVALID_ARG;
   }
 
-  return aes_cipher_run(key, PSA_ALG_CBC_NO_PADDING, true, iv,
-                        CRYPTO_AES_IV_SIZE, input, input_len, output);
+  return aes_cipher_run(key, CRYPTO_AES_KEY_SIZE, PSA_ALG_CBC_NO_PADDING, true,
+                        iv, CRYPTO_AES_IV_SIZE, input, input_len, output);
 }
 
 int crypto_aes_cbc_decrypt(const uint8_t key[CRYPTO_AES_KEY_SIZE],
@@ -163,8 +163,68 @@ int crypto_aes_cbc_decrypt(const uint8_t key[CRYPTO_AES_KEY_SIZE],
     return CRYPTO_ERR_INVALID_ARG;
   }
 
-  return aes_cipher_run(key, PSA_ALG_CBC_NO_PADDING, false, iv,
-                        CRYPTO_AES_IV_SIZE, input, input_len, output);
+  return aes_cipher_run(key, CRYPTO_AES_KEY_SIZE, PSA_ALG_CBC_NO_PADDING, false,
+                        iv, CRYPTO_AES_IV_SIZE, input, input_len, output);
+}
+
+/* --- AES-128-CBC --- */
+
+int crypto_aes128_cbc_encrypt(const uint8_t key[CRYPTO_AES128_KEY_SIZE],
+                              const uint8_t iv[CRYPTO_AES_IV_SIZE],
+                              const uint8_t *input, size_t input_len,
+                              uint8_t *output) {
+  if (!key || !iv || !input || !output || input_len == 0 ||
+      input_len % CRYPTO_AES_BLOCK_SIZE != 0) {
+    return CRYPTO_ERR_INVALID_ARG;
+  }
+
+  return aes_cipher_run(key, CRYPTO_AES128_KEY_SIZE, PSA_ALG_CBC_NO_PADDING,
+                        true, iv, CRYPTO_AES_IV_SIZE, input, input_len, output);
+}
+
+int crypto_aes128_cbc_decrypt(const uint8_t key[CRYPTO_AES128_KEY_SIZE],
+                              const uint8_t iv[CRYPTO_AES_IV_SIZE],
+                              const uint8_t *input, size_t input_len,
+                              uint8_t *output) {
+  if (!key || !iv || !input || !output || input_len == 0 ||
+      input_len % CRYPTO_AES_BLOCK_SIZE != 0) {
+    return CRYPTO_ERR_INVALID_ARG;
+  }
+
+  return aes_cipher_run(key, CRYPTO_AES128_KEY_SIZE, PSA_ALG_CBC_NO_PADDING,
+                        false, iv, CRYPTO_AES_IV_SIZE, input, input_len,
+                        output);
+}
+
+/* --- HMAC-SHA1 --- */
+
+int crypto_hmac_sha1(const uint8_t *key, size_t key_len, const uint8_t *msg,
+                     size_t msg_len, uint8_t mac_out[CRYPTO_SHA1_SIZE]) {
+  if (!key || key_len == 0 || (!msg && msg_len) || !mac_out) {
+    return CRYPTO_ERR_INVALID_ARG;
+  }
+
+  if (!ensure_psa_init()) {
+    return CRYPTO_ERR_INTERNAL;
+  }
+
+  const psa_algorithm_t alg = PSA_ALG_HMAC(PSA_ALG_SHA_1);
+  psa_key_attributes_t attr = PSA_KEY_ATTRIBUTES_INIT;
+  psa_set_key_usage_flags(&attr, PSA_KEY_USAGE_SIGN_MESSAGE);
+  psa_set_key_algorithm(&attr, alg);
+  psa_set_key_type(&attr, PSA_KEY_TYPE_HMAC);
+  mbedtls_svc_key_id_t key_id;
+  if (psa_import_key(&attr, key, key_len, &key_id) != PSA_SUCCESS) {
+    return CRYPTO_ERR_INTERNAL;
+  }
+
+  size_t mac_len = 0;
+  psa_status_t st = psa_mac_compute(key_id, alg, msg, msg_len, mac_out,
+                                    CRYPTO_SHA1_SIZE, &mac_len);
+  psa_destroy_key(key_id);
+  return (st == PSA_SUCCESS && mac_len == CRYPTO_SHA1_SIZE)
+             ? CRYPTO_OK
+             : CRYPTO_ERR_INTERNAL;
 }
 
 /* --- AES-256-CTR --- */
@@ -180,8 +240,8 @@ int crypto_aes_ctr(const uint8_t key[CRYPTO_AES_KEY_SIZE],
   uint8_t counter[CRYPTO_AES_BLOCK_SIZE] = {0};
   memcpy(counter, nonce, CRYPTO_AES_CTR_NONCE_SIZE);
 
-  return aes_cipher_run(key, PSA_ALG_CTR, true, counter, sizeof(counter), input,
-                        input_len, output);
+  return aes_cipher_run(key, CRYPTO_AES_KEY_SIZE, PSA_ALG_CTR, true, counter,
+                        sizeof(counter), input, input_len, output);
 }
 
 /* --- AES-256-GCM --- */
@@ -201,7 +261,8 @@ int crypto_aes_gcm_encrypt(const uint8_t key[CRYPTO_AES_KEY_SIZE],
 
   psa_algorithm_t alg = PSA_ALG_AEAD_WITH_SHORTENED_TAG(PSA_ALG_GCM, tag_len);
   mbedtls_svc_key_id_t key_id;
-  if (aes_key_import(key, alg, PSA_KEY_USAGE_ENCRYPT, &key_id) != PSA_SUCCESS) {
+  if (aes_key_import(key, CRYPTO_AES_KEY_SIZE, alg, PSA_KEY_USAGE_ENCRYPT,
+                     &key_id) != PSA_SUCCESS) {
     return CRYPTO_ERR_INTERNAL;
   }
 
@@ -245,7 +306,8 @@ int crypto_aes_gcm_decrypt(const uint8_t key[CRYPTO_AES_KEY_SIZE],
 
   psa_algorithm_t alg = PSA_ALG_AEAD_WITH_SHORTENED_TAG(PSA_ALG_GCM, tag_len);
   mbedtls_svc_key_id_t key_id;
-  if (aes_key_import(key, alg, PSA_KEY_USAGE_DECRYPT, &key_id) != PSA_SUCCESS) {
+  if (aes_key_import(key, CRYPTO_AES_KEY_SIZE, alg, PSA_KEY_USAGE_DECRYPT,
+                     &key_id) != PSA_SUCCESS) {
     return CRYPTO_ERR_INTERNAL;
   }
 

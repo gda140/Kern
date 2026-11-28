@@ -1,6 +1,7 @@
 /*
  * Crypto Utilities
- * AES-256, PBKDF2-HMAC-SHA256, SHA-256 primitives wrapping the PSA Crypto
+ * AES-256, PBKDF2-HMAC-SHA256, SHA-256 primitives (plus AES-128-CBC and
+ * HMAC-SHA1 for the Satochip secure channel) wrapping the PSA Crypto
  * API (hardware-accelerated transparently).
  *
  * All functions return 0 on success, negative on error.
@@ -19,6 +20,8 @@
 #define CRYPTO_AES_CTR_NONCE_SIZE 12
 #define CRYPTO_AES_GCM_NONCE_SIZE 12
 #define CRYPTO_SHA256_SIZE 32
+#define CRYPTO_AES128_KEY_SIZE 16
+#define CRYPTO_SHA1_SIZE 20
 
 #define CRYPTO_OK 0
 #define CRYPTO_ERR_INVALID_ARG -1
@@ -70,6 +73,30 @@ KERN_WARN_UNUSED_RESULT int
 crypto_aes_cbc_decrypt(const uint8_t key[CRYPTO_AES_KEY_SIZE],
                        const uint8_t iv[CRYPTO_AES_IV_SIZE],
                        const uint8_t *input, size_t input_len, uint8_t *output);
+
+/* --- AES-128-CBC --- */
+
+/* Same contract as the AES-256-CBC pair, with a 16-byte key. Only for
+ * protocols that fix AES-128, such as the Satochip secure channel. */
+KERN_WARN_UNUSED_RESULT int
+crypto_aes128_cbc_encrypt(const uint8_t key[CRYPTO_AES128_KEY_SIZE],
+                          const uint8_t iv[CRYPTO_AES_IV_SIZE],
+                          const uint8_t *input, size_t input_len,
+                          uint8_t *output);
+
+KERN_WARN_UNUSED_RESULT int
+crypto_aes128_cbc_decrypt(const uint8_t key[CRYPTO_AES128_KEY_SIZE],
+                          const uint8_t iv[CRYPTO_AES_IV_SIZE],
+                          const uint8_t *input, size_t input_len,
+                          uint8_t *output);
+
+/* --- HMAC-SHA1 --- */
+
+/* HMAC-SHA1. Only for protocols that fix it, such as the Satochip secure
+ * channel; use SHA-256 for anything new. */
+KERN_WARN_UNUSED_RESULT int crypto_hmac_sha1(const uint8_t *key, size_t key_len,
+                                             const uint8_t *msg, size_t msg_len,
+                                             uint8_t mac_out[CRYPTO_SHA1_SIZE]);
 
 /* --- AES-256-CTR --- */
 

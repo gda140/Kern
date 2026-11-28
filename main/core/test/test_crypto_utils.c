@@ -133,6 +133,53 @@ static void test_cbc(void) {
                 CRYPTO_ERR_INVALID_ARG);
 }
 
+static void test_aes128_cbc(void) {
+  uint8_t key[16], iv[16], pt[32], ct[32], back[32];
+  unhex("2b7e151628aed2a6abf7158809cf4f3c", key);
+  unhex("000102030405060708090a0b0c0d0e0f", iv);
+  unhex("6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e51", pt);
+  check("aes128 cbc SP800-38A F.2.1 encrypt",
+        crypto_aes128_cbc_encrypt(key, iv, pt, 32, ct) == CRYPTO_OK &&
+            hex_eq(ct,
+                   "7649abac8119b246cee98e9b12e9197d5086cb9b507219ee95db113a917"
+                   "678b2",
+                   32));
+  check("aes128 cbc SP800-38A F.2.2 decrypt",
+        crypto_aes128_cbc_decrypt(key, iv, ct, 32, back) == CRYPTO_OK &&
+            memcmp(back, pt, 32) == 0);
+  check("aes128 cbc rejects partial blocks and NULL iv",
+        crypto_aes128_cbc_encrypt(key, iv, pt, 20, ct) ==
+                CRYPTO_ERR_INVALID_ARG &&
+            crypto_aes128_cbc_encrypt(key, NULL, pt, 16, ct) ==
+                CRYPTO_ERR_INVALID_ARG &&
+            crypto_aes128_cbc_decrypt(key, iv, pt, 0, ct) ==
+                CRYPTO_ERR_INVALID_ARG);
+}
+
+static void test_hmac_sha1(void) {
+  uint8_t key[80], mac[CRYPTO_SHA1_SIZE];
+  memset(key, 0x0b, 20);
+  check("hmac-sha1 RFC 2202 case 1",
+        crypto_hmac_sha1(key, 20, (const uint8_t *)"Hi There", 8, mac) ==
+                CRYPTO_OK &&
+            hex_eq(mac, "b617318655057264e28bc0b6fb378c8ef146be00", 20));
+  const char *msg2 = "what do ya want for nothing?";
+  check("hmac-sha1 RFC 2202 case 2",
+        crypto_hmac_sha1((const uint8_t *)"Jefe", 4, (const uint8_t *)msg2,
+                         strlen(msg2), mac) == CRYPTO_OK &&
+            hex_eq(mac, "effcdf6ae5eb2fa2d27416d5f184df9c259a7c79", 20));
+  memset(key, 0xaa, 80);
+  const char *msg6 = "Test Using Larger Than Block-Size Key - Hash Key First";
+  check("hmac-sha1 RFC 2202 case 6 (key longer than a block)",
+        crypto_hmac_sha1(key, 80, (const uint8_t *)msg6, strlen(msg6), mac) ==
+                CRYPTO_OK &&
+            hex_eq(mac, "aa4ae5e15272d00e95705637ce8a3b55ed402112", 20));
+  check("hmac-sha1 rejects NULL and empty key",
+        crypto_hmac_sha1(NULL, 20, key, 1, mac) == CRYPTO_ERR_INVALID_ARG &&
+            crypto_hmac_sha1(key, 0, key, 1, mac) == CRYPTO_ERR_INVALID_ARG &&
+            crypto_hmac_sha1(key, 20, key, 1, NULL) == CRYPTO_ERR_INVALID_ARG);
+}
+
 static void test_ctr(void) {
   uint8_t key[32], nonce[12], pt[53], ct[53], back[53];
   unhex(KEY_38A, key);
@@ -362,6 +409,8 @@ int main(void) {
   test_sha256();
   test_ecb();
   test_cbc();
+  test_aes128_cbc();
+  test_hmac_sha1();
   test_ctr();
   test_gcm();
   test_pbkdf2();

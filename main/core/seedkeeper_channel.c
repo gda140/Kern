@@ -121,7 +121,8 @@ sec1210_err_t seedkeeper_session_open(void) {
       olen != sizeof(raw) || raw[0] != 0x04)
     goto proto;
 
-  seedkeeper_sc_init(&session, raw + 1);
+  if (!seedkeeper_sc_init(&session, raw + 1))
+    goto proto;
   session_open = true;
   err = SEC1210_OK;
   goto out;

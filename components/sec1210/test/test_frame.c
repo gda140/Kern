@@ -207,7 +207,7 @@ static void test_secure_channel(void) {
   uint8_t shared[32];
   memset(shared, 0x11, sizeof(shared));
   seedkeeper_sc_t sc;
-  seedkeeper_sc_init(&sc, shared);
+  expect("sc init", seedkeeper_sc_init(&sc, shared));
   const uint8_t prefix[12] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55,
                               0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb};
   const char *plain = "hello seedkeeper";
