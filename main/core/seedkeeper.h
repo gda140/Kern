@@ -92,6 +92,26 @@ bool seedkeeper_status_parse(const uint8_t *buf, size_t len,
 bool seedkeeper_fingerprint_equal(const uint8_t expected[4],
                                   const uint8_t digest[32]);
 
+/* A paired card is known by its compressed authentikey. The device keeps at
+ * most SEEDKEEPER_CARDS_MAX of them, packed back to back. */
+#define SEEDKEEPER_CARD_KEY_LEN 33
+#define SEEDKEEPER_CARDS_MAX 4
+/* 66 hex digits in groups of 4, 16 spaces, NUL. */
+#define SEEDKEEPER_CARD_ID_LEN 83
+
+/* Index of `key` in `count` packed keys, or -1. */
+int seedkeeper_cards_find(const uint8_t *list, size_t count,
+                          const uint8_t key[SEEDKEEPER_CARD_KEY_LEN]);
+
+/* True if `list` holds len / 33 well-formed compressed keys, at most
+ * SEEDKEEPER_CARDS_MAX of them. */
+bool seedkeeper_cards_valid(const uint8_t *list, size_t len);
+
+/* The card ID shown to the user: the compressed authentikey in uppercase
+ * hex, in groups of 4. cap must be at least SEEDKEEPER_CARD_ID_LEN. */
+bool seedkeeper_card_id(const uint8_t key[SEEDKEEPER_CARD_KEY_LEN], char *out,
+                        size_t cap);
+
 /* Uncompressed ephemeral pubkey, 65 bytes. INS 0x81, sent in the clear. */
 size_t seedkeeper_apdu_secure_init(const uint8_t pubkey[65], uint8_t *out,
                                    size_t cap);

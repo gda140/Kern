@@ -5,6 +5,7 @@
 #include "../utils/secure_mem.h"
 #include "crypto_utils.h"
 #include "seedkeeper.h"
+#include "seedkeeper_pairing.h"
 #include "seedkeeper_sc.h"
 
 #include <mbedtls/ecp.h>
@@ -14,6 +15,8 @@
 
 static seedkeeper_sc_t session;
 static bool session_open;
+static bool session_trusted;
+static uint8_t session_card[SEEDKEEPER_CARD_KEY_LEN];
 
 static int session_rng(void *ctx, unsigned char *out, size_t len) {
   (void)ctx;
@@ -59,9 +62,31 @@ out:
 void seedkeeper_session_close(void) {
   seedkeeper_sc_wipe(&session);
   session_open = false;
+  session_trusted = false;
+  secure_memzero(session_card, sizeof(session_card));
 }
 
 bool seedkeeper_session_is_open(void) { return session_open; }
+
+bool seedkeeper_session_trusted(void) {
+  return session_open && session_trusted;
+}
+
+bool seedkeeper_session_card(uint8_t key[SEEDKEEPER_CARD_KEY_LEN]) {
+  if (!session_open || !key)
+    return false;
+  memcpy(key, session_card, SEEDKEEPER_CARD_KEY_LEN);
+  return true;
+}
+
+seedkeeper_pair_result_t seedkeeper_session_pair(void) {
+  if (!session_open)
+    return SEEDKEEPER_PAIR_FAILED;
+  seedkeeper_pair_result_t result = seedkeeper_pairing_add(session_card);
+  if (result == SEEDKEEPER_PAIR_OK)
+    session_trusted = true;
+  return result;
+}
 
 sec1210_err_t seedkeeper_session_open(void) {
   seedkeeper_session_close();
@@ -78,6 +103,8 @@ sec1210_err_t seedkeeper_session_open(void) {
   uint8_t pub[EC_PUBLIC_KEY_UNCOMPRESSED_LEN];
   uint8_t peer_pub[EC_PUBLIC_KEY_UNCOMPRESSED_LEN];
   uint8_t raw[EC_PUBLIC_KEY_UNCOMPRESSED_LEN];
+  uint8_t auth_pub[EC_PUBLIC_KEY_UNCOMPRESSED_LEN];
+  uint8_t auth_x[32];
   uint8_t apdu[70];
   uint8_t resp[SEC1210_MAX_APDU];
   sec1210_err_t err = SEC1210_ERR_PROTO;
@@ -108,7 +135,17 @@ sec1210_err_t seedkeeper_session_open(void) {
   const uint8_t *sig = NULL;
   size_t sig_len = 0;
   if (!seedkeeper_sc_parse_init(resp, resp_len, x, &sig, &sig_len) ||
-      !recover_peer(resp, 34, sig, sig_len, x, peer_pub) ||
+      !recover_peer(resp, 34, sig, sig_len, x, peer_pub))
+    goto proto;
+
+  /* The authentikey signs the ephemeral key and its self-signature. The
+   * recovered key is the card's identity; pairing decides if it is trusted. */
+  size_t signed_len = 0;
+  const uint8_t *sig2 = NULL;
+  size_t sig2_len = 0;
+  if (!seedkeeper_sc_parse_init_auth(resp, resp_len, &signed_len, &sig2,
+                                     &sig2_len, auth_x) ||
+      !recover_peer(resp, signed_len, sig2, sig2_len, auth_x, auth_pub) ||
       mbedtls_ecp_point_read_binary(&grp, &peer, peer_pub, sizeof(peer_pub)) !=
           0 ||
       mbedtls_ecp_check_pubkey(&grp, &peer) != 0 ||
@@ -123,6 +160,9 @@ sec1210_err_t seedkeeper_session_open(void) {
 
   if (!seedkeeper_sc_init(&session, raw + 1))
     goto proto;
+  session_card[0] = (auth_pub[64] & 1) ? 0x03 : 0x02;
+  memcpy(session_card + 1, auth_pub + 1, 32);
+  session_trusted = seedkeeper_pairing_known(session_card);
   session_open = true;
   err = SEC1210_OK;
   goto out;
@@ -139,6 +179,8 @@ out:
   secure_memzero(pub, sizeof(pub));
   secure_memzero(peer_pub, sizeof(peer_pub));
   secure_memzero(raw, sizeof(raw));
+  secure_memzero(auth_pub, sizeof(auth_pub));
+  secure_memzero(auth_x, sizeof(auth_x));
   secure_memzero(apdu, sizeof(apdu));
   secure_memzero(resp, sizeof(resp));
   if (err != SEC1210_OK)
@@ -212,7 +254,7 @@ sec1210_err_t seedkeeper_session_transmit(const uint8_t *apdu, size_t apdu_len,
                                           uint8_t *resp, size_t resp_cap,
                                           size_t *resp_len, uint8_t *sw1,
                                           uint8_t *sw2) {
-  if (!session_open || !apdu || !apdu_len)
+  if (!session_open || !session_trusted || !apdu || !apdu_len)
     return SEC1210_ERR_ARG;
   sec1210_err_t err =
       transmit_once(apdu, apdu_len, resp, resp_cap, resp_len, sw1, sw2);
@@ -221,6 +263,8 @@ sec1210_err_t seedkeeper_session_transmit(const uint8_t *apdu, size_t apdu_len,
   err = seedkeeper_session_open();
   if (err != SEC1210_OK)
     return err;
+  if (!session_trusted)
+    return SEC1210_ERR_ARG;
   return transmit_once(apdu, apdu_len, resp, resp_cap, resp_len, sw1, sw2);
 }
 
@@ -231,6 +275,17 @@ sec1210_err_t seedkeeper_session_open(void) { return SEC1210_ERR_IO; }
 void seedkeeper_session_close(void) {}
 
 bool seedkeeper_session_is_open(void) { return false; }
+
+bool seedkeeper_session_trusted(void) { return false; }
+
+bool seedkeeper_session_card(uint8_t key[SEEDKEEPER_CARD_KEY_LEN]) {
+  (void)key;
+  return false;
+}
+
+seedkeeper_pair_result_t seedkeeper_session_pair(void) {
+  return SEEDKEEPER_PAIR_FAILED;
+}
 
 sec1210_err_t seedkeeper_session_transmit(const uint8_t *apdu, size_t apdu_len,
                                           uint8_t *resp, size_t resp_cap,

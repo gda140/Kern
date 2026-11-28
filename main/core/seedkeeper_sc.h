@@ -48,6 +48,14 @@ bool seedkeeper_sc_open(const seedkeeper_sc_t *sc, const uint8_t *msg,
 bool seedkeeper_sc_parse_init(const uint8_t *resp, size_t len, uint8_t x[32],
                               const uint8_t **sig, size_t *sig_len);
 
+/* The rest of an INIT response: sig2_size || sig2 || x_size || authentikey_x.
+ * sig2 is the authentikey's signature over resp[0 .. *signed_len), which
+ * holds the ephemeral key and its self-signature. `sig2` points into `resp`.
+ * Applets that predate the authentikey x-coordinate fail here. */
+bool seedkeeper_sc_parse_init_auth(const uint8_t *resp, size_t len,
+                                   size_t *signed_len, const uint8_t **sig2,
+                                   size_t *sig2_len, uint8_t auth_x[32]);
+
 /* Split a DER ECDSA signature into 32-byte big-endian r and s. Either may
  * be 33 bytes on the wire when its top bit is set. */
 bool seedkeeper_sc_der_rs(const uint8_t *sig, size_t len, uint8_t r[32],

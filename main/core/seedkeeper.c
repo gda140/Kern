@@ -88,6 +88,45 @@ bool seedkeeper_status_parse(const uint8_t *buf, size_t len,
   return true;
 }
 
+int seedkeeper_cards_find(const uint8_t *list, size_t count,
+                          const uint8_t key[SEEDKEEPER_CARD_KEY_LEN]) {
+  if (!list || !key)
+    return -1;
+  for (size_t i = 0; i < count; i++) {
+    if (memcmp(list + i * SEEDKEEPER_CARD_KEY_LEN, key,
+               SEEDKEEPER_CARD_KEY_LEN) == 0)
+      return (int)i;
+  }
+  return -1;
+}
+
+bool seedkeeper_cards_valid(const uint8_t *list, size_t len) {
+  if (len % SEEDKEEPER_CARD_KEY_LEN != 0 ||
+      len > SEEDKEEPER_CARDS_MAX * SEEDKEEPER_CARD_KEY_LEN || (len && !list))
+    return false;
+  for (size_t at = 0; at < len; at += SEEDKEEPER_CARD_KEY_LEN) {
+    if (list[at] != 0x02 && list[at] != 0x03)
+      return false;
+  }
+  return true;
+}
+
+bool seedkeeper_card_id(const uint8_t key[SEEDKEEPER_CARD_KEY_LEN], char *out,
+                        size_t cap) {
+  static const char HEX[] = "0123456789ABCDEF";
+  if (!key || !out || cap < SEEDKEEPER_CARD_ID_LEN)
+    return false;
+  size_t at = 0;
+  for (size_t i = 0; i < SEEDKEEPER_CARD_KEY_LEN * 2; i++) {
+    if (i && i % 4 == 0)
+      out[at++] = ' ';
+    uint8_t byte = key[i / 2];
+    out[at++] = HEX[(i % 2) ? (byte & 0x0F) : (byte >> 4)];
+  }
+  out[at] = '\0';
+  return true;
+}
+
 bool seedkeeper_fingerprint_equal(const uint8_t expected[4],
                                   const uint8_t digest[32]) {
   if (!expected || !digest)

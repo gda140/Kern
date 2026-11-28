@@ -63,6 +63,10 @@ esp_err_t settings_set_session_timeout(uint16_t sec);
 KERN_WARN_UNUSED_RESULT bool
 settings_disclaimer_acknowledged(const char *version);
 esp_err_t settings_acknowledge_disclaimer(const char *version);
+/* Paired Seedkeeper authentikeys, packed. *len is the buffer size in and the
+ * stored size out; nothing stored reads as 0. Wiped by settings_reset_all. */
+esp_err_t settings_get_seedkeeper_cards(uint8_t *buf, size_t *len);
+esp_err_t settings_set_seedkeeper_cards(const uint8_t *buf, size_t len);
 KERN_WARN_UNUSED_RESULT esp_err_t settings_reset_all(void);
 
 #endif // SETTINGS_H

@@ -23,6 +23,7 @@ static const char *KEY_EXPECTED_OWNED_SIGNING = "exp_own_sign";
 static const char *KEY_SCREENSAVER = "scrn_svr";
 static const char *KEY_SESSION_TIMEOUT = "sess_tout";
 static const char *KEY_DISCLAIMER_VERSION = "disc_ver";
+static const char *KEY_SEEDKEEPER_CARDS = "sk_cards";
 
 static nvs_handle_t settings_nvs;
 static bool initialized = false;
@@ -274,6 +275,37 @@ esp_err_t settings_acknowledge_disclaimer(const char *version) {
   if (err != ESP_OK)
     return settings_report(KEY_DISCLAIMER_VERSION, err);
   return settings_report(KEY_DISCLAIMER_VERSION, nvs_commit(settings_nvs));
+}
+
+esp_err_t settings_get_seedkeeper_cards(uint8_t *buf, size_t *len) {
+  if (!buf || !len)
+    return ESP_ERR_INVALID_ARG;
+  if (!initialized)
+    return ESP_ERR_INVALID_STATE;
+  esp_err_t err = nvs_get_blob(settings_nvs, KEY_SEEDKEEPER_CARDS, buf, len);
+  if (err == ESP_ERR_NVS_NOT_FOUND) {
+    *len = 0;
+    return ESP_OK;
+  }
+  return err;
+}
+
+esp_err_t settings_set_seedkeeper_cards(const uint8_t *buf, size_t len) {
+  if (!initialized)
+    return settings_report(KEY_SEEDKEEPER_CARDS, ESP_ERR_INVALID_STATE);
+  esp_err_t err;
+  if (len == 0) {
+    err = nvs_erase_key(settings_nvs, KEY_SEEDKEEPER_CARDS);
+    if (err == ESP_ERR_NVS_NOT_FOUND)
+      return ESP_OK;
+  } else {
+    if (!buf)
+      return ESP_ERR_INVALID_ARG;
+    err = nvs_set_blob(settings_nvs, KEY_SEEDKEEPER_CARDS, buf, len);
+  }
+  if (err != ESP_OK)
+    return settings_report(KEY_SEEDKEEPER_CARDS, err);
+  return settings_report(KEY_SEEDKEEPER_CARDS, nvs_commit(settings_nvs));
 }
 
 esp_err_t settings_reset_all(void) {

@@ -162,3 +162,30 @@ bool seedkeeper_sc_parse_init(const uint8_t *resp, size_t len, uint8_t x[32],
   *sig_len = n;
   return true;
 }
+
+bool seedkeeper_sc_parse_init_auth(const uint8_t *resp, size_t len,
+                                   size_t *signed_len, const uint8_t **sig2,
+                                   size_t *sig2_len, uint8_t auth_x[32]) {
+  uint8_t x[32];
+  const uint8_t *sig = NULL;
+  size_t sig_len = 0;
+  if (!signed_len || !sig2 || !sig2_len || !auth_x ||
+      !seedkeeper_sc_parse_init(resp, len, x, &sig, &sig_len))
+    return false;
+  secure_memzero(x, sizeof(x));
+  size_t at = 2 + 32 + 2 + sig_len;
+  if (len < at + 2)
+    return false;
+  size_t n2 = ((size_t)resp[at] << 8) | resp[at + 1];
+  if (n2 == 0 || len < at + 2 + n2 + 2)
+    return false;
+  size_t xat = at + 2 + n2;
+  size_t xn = ((size_t)resp[xat] << 8) | resp[xat + 1];
+  if (xn != 32 || len < xat + 2 + 32)
+    return false;
+  *signed_len = at;
+  *sig2 = resp + at + 2;
+  *sig2_len = n2;
+  memcpy(auth_x, resp + xat + 2, 32);
+  return true;
+}

@@ -8,6 +8,7 @@
 
 #include "smartcard_import.h"
 #include "smartcard_page.h"
+#include "smartcard_pair.h"
 #include "smartcard_slot.h"
 
 #if defined(CONFIG_KERN_BOARD_P4_PICO) && !defined(SIMULATOR)
@@ -565,6 +566,14 @@ static void start_watch(void) {
   watch_timer = lv_timer_create(watch_tick, 500, NULL);
 }
 
+/* The card is not paired: nothing, not even its PIN, was sent to it. */
+static void pair_refused(void) {
+  snprintf(note, sizeof(note), "Card not paired. Its PIN was not sent.");
+  io_err = SEC1210_OK;
+  show_note(false);
+  reader_down();
+}
+
 static void after_open(void) {
   hide_loading_spinner();
   if (!job_ok) {
@@ -585,7 +594,7 @@ static void after_open(void) {
     return;
   }
   stop_watch();
-  show_pin();
+  smartcard_pair_gate(show_pin, pair_refused);
 }
 
 static void after_pin(void) {
@@ -915,6 +924,7 @@ void smartcard_import_create(lv_obj_t *parent, void (*return_cb)(void),
 
 void smartcard_import_destroy(void) {
   session_cleanup_unregister(smartcard_import_destroy);
+  smartcard_pair_cancel();
   stop_watch();
   cancel_retry_timer();
   hide_loading_spinner();

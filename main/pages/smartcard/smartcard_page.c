@@ -11,6 +11,8 @@
 #if defined(CONFIG_KERN_BOARD_P4_PICO) && !defined(SIMULATOR)
 
 #include "../../core/seedkeeper.h"
+#include "../../core/seedkeeper_pairing.h"
+#include "../../ui/dialog.h"
 #include "../../ui/input_helpers.h"
 #include "../../ui/oneshot.h"
 #include "../../ui/theme_widgets.h"
@@ -239,7 +241,35 @@ static void delete_event(lv_event_t *e) {
   ui_oneshot_start(&again, delete_now, 0);
 }
 
+static lv_obj_t *forget_button = NULL;
+
+static void forget_answer(bool confirmed, void *user_data) {
+  (void)user_data;
+  if (!confirmed)
+    return;
+  if (!seedkeeper_pairing_forget_all()) {
+    dialog_show_error_timeout("Could not forget the cards.", NULL, 0);
+    return;
+  }
+  if (forget_button) {
+    lv_obj_del(forget_button);
+    forget_button = NULL;
+  }
+  dialog_show_info("Cards forgotten",
+                   "The next card you use will ask to be paired.", NULL, NULL,
+                   DIALOG_STYLE_FULLSCREEN);
+}
+
+static void forget_event(lv_event_t *e) {
+  (void)e;
+  dialog_show_danger_confirm(
+      "Forget every paired Seedkeeper? Each card will ask to be paired "
+      "again. The cards themselves are not changed.",
+      forget_answer, NULL, DIALOG_STYLE_FULLSCREEN);
+}
+
 static void show_report(void) {
+  forget_button = NULL;
   lv_obj_clean(body);
   status_label =
       theme_create_label(body, report[0] ? report : "No answer.", false);
@@ -268,6 +298,15 @@ static void show_report(void) {
   lv_obj_t *button = theme_create_button(body, "Probe again", false);
   lv_obj_set_style_margin_top(button, theme_default_padding(), 0);
   lv_obj_add_event_cb(button, probe_again_event, LV_EVENT_CLICKED, NULL);
+
+  int paired = seedkeeper_pairing_count();
+  if (paired > 0) {
+    char text[40];
+    snprintf(text, sizeof(text), "Forget paired cards (%d)", paired);
+    forget_button = theme_create_button(body, text, false);
+    lv_obj_set_style_margin_top(forget_button, theme_default_padding(), 0);
+    lv_obj_add_event_cb(forget_button, forget_event, LV_EVENT_CLICKED, NULL);
+  }
 }
 
 static void poll_cb(lv_timer_t *timer) {
@@ -285,6 +324,7 @@ static void start_probe(void) {
   if (running || !body)
     return;
   cancel_retry_timer();
+  forget_button = NULL;
   lv_obj_clean(body);
   lv_obj_t *spinner = lv_spinner_create(body);
   theme_apply_spinner(spinner);
@@ -358,6 +398,7 @@ void smartcard_page_destroy(void) {
     screen = NULL;
   }
   body = NULL;
+  forget_button = NULL;
   status_label = NULL;
   return_callback = NULL;
 }

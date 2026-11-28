@@ -170,6 +170,42 @@ static void test_seedkeeper(void) {
   expect("fingerprint mismatch", !seedkeeper_fingerprint_equal(fp, digest));
 }
 
+static void test_cards(void) {
+  uint8_t list[SEEDKEEPER_CARDS_MAX * SEEDKEEPER_CARD_KEY_LEN];
+  for (int i = 0; i < SEEDKEEPER_CARDS_MAX; i++) {
+    memset(list + i * SEEDKEEPER_CARD_KEY_LEN, 0x10 + i, SEEDKEEPER_CARD_KEY_LEN);
+    list[i * SEEDKEEPER_CARD_KEY_LEN] = (i % 2) ? 0x03 : 0x02;
+  }
+  uint8_t key[SEEDKEEPER_CARD_KEY_LEN];
+  memcpy(key, list + 2 * SEEDKEEPER_CARD_KEY_LEN, sizeof(key));
+  expect("card found", seedkeeper_cards_find(list, 4, key) == 2);
+  expect("card outside count", seedkeeper_cards_find(list, 2, key) == -1);
+  key[32] ^= 1;
+  expect("card one bit off", seedkeeper_cards_find(list, 4, key) == -1);
+  expect("cards empty list", seedkeeper_cards_find(list, 0, key) == -1);
+
+  expect("cards valid", seedkeeper_cards_valid(list, sizeof(list)) &&
+                            seedkeeper_cards_valid(list, 0));
+  expect("cards partial key", !seedkeeper_cards_valid(list, 34));
+  uint8_t big[5 * SEEDKEEPER_CARD_KEY_LEN];
+  memset(big, 0x02, sizeof(big));
+  expect("cards too many", !seedkeeper_cards_valid(big, sizeof(big)));
+  list[SEEDKEEPER_CARD_KEY_LEN] = 0x04;
+  expect("cards bad prefix", !seedkeeper_cards_valid(list, sizeof(list)));
+
+  uint8_t id_key[SEEDKEEPER_CARD_KEY_LEN];
+  for (int i = 0; i < SEEDKEEPER_CARD_KEY_LEN; i++)
+    id_key[i] = (uint8_t)(i == 0 ? 0x02 : i * 7);
+  char id[SEEDKEEPER_CARD_ID_LEN];
+  expect("card id",
+         seedkeeper_card_id(id_key, id, sizeof(id)) &&
+             strlen(id) == SEEDKEEPER_CARD_ID_LEN - 1 &&
+             strncmp(id, "0207 0E15 1C23", 14) == 0 && id[4] == ' ' &&
+             strcmp(id + strlen(id) - 2, "E0") == 0);
+  expect("card id small buffer",
+         !seedkeeper_card_id(id_key, id, SEEDKEEPER_CARD_ID_LEN - 1));
+}
+
 static void test_t1(void) {
   const uint8_t atr[] = {0x3B, 0xDC, 0x18, 0xFF, 0x81, 0x91, 0xFE, 0x1F, 0xC3,
                          0x80, 0x73, 0xC8, 0x21, 0x13, 0x66, 0x05, 0x03, 0x63,
@@ -273,6 +309,44 @@ static void test_secure_channel(void) {
   init[1] = 0x21;
   expect("parse init rejects non-32 x",
          !seedkeeper_sc_parse_init(init, sizeof(init), x, &sig, &sig_len));
+
+  /* x_size || x || self-sig (3) || sig2 (4) || auth x_size || auth x */
+  uint8_t full[2 + 32 + 2 + 3 + 2 + 4 + 2 + 32];
+  size_t at = 0;
+  full[at++] = 0x00;
+  full[at++] = 0x20;
+  memset(full + at, 0xAB, 32);
+  at += 32;
+  full[at++] = 0x00;
+  full[at++] = 0x03;
+  memset(full + at, 0x30, 3);
+  at += 3;
+  full[at++] = 0x00;
+  full[at++] = 0x04;
+  memset(full + at, 0x31, 4);
+  at += 4;
+  full[at++] = 0x00;
+  full[at++] = 0x20;
+  memset(full + at, 0xCD, 32);
+  size_t signed_len = 0;
+  const uint8_t *sig2 = NULL;
+  size_t sig2_len = 0;
+  uint8_t auth_x[32];
+  expect("parse init authentikey",
+         seedkeeper_sc_parse_init_auth(full, sizeof(full), &signed_len, &sig2,
+                                       &sig2_len, auth_x) &&
+             signed_len == 39 && sig2 == full + 41 && sig2_len == 4 &&
+             auth_x[0] == 0xCD && auth_x[31] == 0xCD);
+  expect("parse init without authentikey x",
+         !seedkeeper_sc_parse_init_auth(full, sizeof(full) - 34, &signed_len,
+                                        &sig2, &sig2_len, auth_x));
+  expect("parse init truncated authentikey x",
+         !seedkeeper_sc_parse_init_auth(full, sizeof(full) - 1, &signed_len,
+                                        &sig2, &sig2_len, auth_x));
+  full[2 + 32 + 2 + 3 + 2 + 4 + 1] = 0x21;
+  expect("parse init rejects a non-32 authentikey x",
+         !seedkeeper_sc_parse_init_auth(full, sizeof(full), &signed_len, &sig2,
+                                        &sig2_len, auth_x));
 }
 
 static void test_secret_decode(void) {
@@ -566,6 +640,7 @@ int main(void) {
   test_xfr_roundtrip();
   test_seedkeeper();
   test_t1();
+  test_cards();
   test_secure_channel();
   test_der_rs();
   test_secret_decode();
