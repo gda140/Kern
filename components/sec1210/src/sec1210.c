@@ -465,13 +465,12 @@ static sec1210_err_t t1_apdu(const uint8_t *apdu, size_t apdu_len, uint8_t *resp
       return SEC1210_ERR_PROTO;
     }
     if ((pcb & 0xC0) == 0x80) {
-      uint8_t nr = (pcb & 0x10) ? 1 : 0;
+      bool resend_apdu = false;
       wipe(inf, sizeof(inf));
-      if (nr != s_ns)
+      if (!sec1210_t1_on_rblock(pcb, acked, s_ns, s_nr, &tx_pcb, &resend_apdu))
         return SEC1210_ERR_PROTO;
-      tx_pcb = s_ns ? 0x40 : 0x00;
-      tx = apdu;
-      tx_len = apdu_len;
+      tx = resend_apdu ? apdu : NULL;
+      tx_len = resend_apdu ? apdu_len : 0;
       continue;
     }
     if (pcb & 0x80) {

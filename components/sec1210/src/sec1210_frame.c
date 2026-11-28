@@ -222,3 +222,19 @@ size_t sec1210_ccid_xfr(uint8_t seq, const uint8_t *apdu, size_t apdu_len,
   memcpy(out + SEC1210_CCID_HEADER, apdu, apdu_len);
   return total;
 }
+
+bool sec1210_t1_on_rblock(uint8_t pcb, bool acked, uint8_t ns, uint8_t nr,
+                          uint8_t *tx_pcb, bool *resend_apdu) {
+  if (!tx_pcb || !resend_apdu || (pcb & 0xC0) != 0x80)
+    return false;
+  if (((pcb & 0x10) ? 1 : 0) != (ns ? 1 : 0))
+    return false;
+  if (acked) {
+    *tx_pcb = (uint8_t)(0x80 | (nr ? 0x10 : 0x00));
+    *resend_apdu = false;
+  } else {
+    *tx_pcb = ns ? 0x40 : 0x00;
+    *resend_apdu = true;
+  }
+  return true;
+}

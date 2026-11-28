@@ -78,4 +78,13 @@ size_t sec1210_t1_build(uint8_t pcb, const uint8_t *inf, size_t inf_len,
 bool sec1210_t1_check(const uint8_t *block, size_t len, uint8_t *pcb,
                       uint8_t *inf, size_t inf_cap, size_t *inf_len);
 
+/* Answer a card R-block (pcb) inside one APDU exchange. ns and nr are the
+ * host's current N(S) and expected N(R); acked is true once the card has sent
+ * its first I-block, so it holds our command. Before that the card lost our
+ * I-block and *resend_apdu is set. After it the card lost our R-block ack, so
+ * only that ack goes again: resending the APDU would run it a second time.
+ * Returns false if the R-block's N(R) does not match ns. */
+bool sec1210_t1_on_rblock(uint8_t pcb, bool acked, uint8_t ns, uint8_t nr,
+                          uint8_t *tx_pcb, bool *resend_apdu);
+
 #endif

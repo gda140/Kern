@@ -190,6 +190,25 @@ static void test_t1(void) {
   block[n - 1] ^= 0xFF;
   expect("ifs bad lrc",
          !sec1210_t1_check(block, n, &pcb, inf, sizeof(inf), &inf_len));
+
+  uint8_t tx = 0xFF;
+  bool resend = false;
+  expect("r-block before ack resends the apdu",
+         sec1210_t1_on_rblock(0x91, false, 1, 0, &tx, &resend) && resend &&
+             tx == 0x40);
+  expect("r-block before ack, ns 0",
+         sec1210_t1_on_rblock(0x81, false, 0, 1, &tx, &resend) && resend &&
+             tx == 0x00);
+  expect("r-block in a chained reply resends only the ack",
+         sec1210_t1_on_rblock(0x81, true, 0, 1, &tx, &resend) && !resend &&
+             tx == 0x90);
+  expect("r-block in a chained reply, nr 0",
+         sec1210_t1_on_rblock(0x92, true, 1, 0, &tx, &resend) && !resend &&
+             tx == 0x80);
+  expect("r-block with the wrong n(r)",
+         !sec1210_t1_on_rblock(0x80, true, 1, 0, &tx, &resend) &&
+             !sec1210_t1_on_rblock(0x90, false, 0, 0, &tx, &resend));
+  expect("not an r-block", !sec1210_t1_on_rblock(0xC3, true, 0, 0, &tx, &resend));
 }
 
 static int hexeq(const uint8_t *got, size_t n, const char *hex) {
