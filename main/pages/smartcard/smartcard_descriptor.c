@@ -7,6 +7,7 @@
  */
 
 #include "smartcard_descriptor.h"
+#include "smartcard_slot.h"
 
 #if defined(CONFIG_KERN_BOARD_P4_PICO) && !defined(SIMULATOR)
 
@@ -33,7 +34,7 @@
 #define SECRET_MAX (SEEDKEEPER_DESCRIPTOR_MAX + 2)
 
 enum { MODE_LOAD, MODE_SAVE };
-enum { JOB_OPEN, JOB_PIN, JOB_LIST, JOB_EXPORT, JOB_SAVE };
+enum { JOB_OPEN, JOB_PIN, JOB_LIST, JOB_EXPORT, JOB_SAVE, JOB_WATCH };
 
 static void (*return_callback)(void) = NULL;
 static smartcard_descriptor_cb loaded_callback = NULL;
@@ -44,6 +45,8 @@ static lv_obj_t *body = NULL;
 static lv_obj_t *pin_host = NULL;
 static lv_obj_t *name_host = NULL;
 static lv_timer_t *poll_timer = NULL;
+static lv_timer_t *watch_timer = NULL;
+static volatile bool card_present;
 static ui_oneshot_t defer;
 static ui_text_input_t pin_input;
 static ui_text_input_t name_input;
@@ -68,6 +71,13 @@ static sec1210_err_t io_err;
 static uint8_t sw1, sw2;
 
 static void wipe_text(void) { secure_memzero(descriptor, sizeof(descriptor)); }
+
+static void stop_watch(void) {
+  if (!watch_timer)
+    return;
+  lv_timer_del(watch_timer);
+  watch_timer = NULL;
+}
 
 static void reader_down(void) {
   seedkeeper_session_close();
@@ -103,7 +113,21 @@ static void list_button_cb(lv_event_t *e) {
   ui_oneshot_start(&defer, list_now, 0);
 }
 
+static void show_slot(int mark) {
+  if (!body)
+    return;
+  if (secret_menu)
+    ui_menu_hide(secret_menu);
+  chrome(true);
+  if (title)
+    lv_label_set_text(title, mode == MODE_SAVE ? "Save" : "Descriptor");
+  if (screen)
+    lv_obj_clear_flag(screen, LV_OBJ_FLAG_HIDDEN);
+  smartcard_slot_show(body, mark);
+}
+
 static void show_note(bool list_button) {
+  smartcard_slot_notes(body);
   chrome(true);
   if (title)
     lv_label_set_text(title, mode == MODE_SAVE ? "Save" : "Descriptor");
@@ -177,6 +201,7 @@ static bool send_apdu(const uint8_t *apdu, size_t apdu_len, uint8_t *resp,
 }
 
 static void job_open(void) {
+  card_present = false;
   io_err = sec1210_init();
   if (io_err != SEC1210_OK)
     return;
@@ -191,6 +216,7 @@ static void job_open(void) {
     io_err = SEC1210_ERR_CARD;
     return;
   }
+  card_present = true;
 
   /* The card generates a key for the session. That sometimes fails on the
    * first try. Power-cycle and repeat. A wrong PIN is not on this path. */
@@ -475,7 +501,24 @@ out:
   secure_memzero(card_fp, sizeof(card_fp));
 }
 
+static void job_watch(void) {
+  card_present = false;
+  if (!reader_up) {
+    io_err = sec1210_init();
+    if (io_err != SEC1210_OK)
+      return;
+    reader_up = true;
+  }
+  sec1210_card_t card = SEC1210_CARD_ABSENT;
+  io_err = sec1210_slot_status(&card);
+  card_present = io_err == SEC1210_OK && card != SEC1210_CARD_ABSENT;
+}
+
 static void worker(void) {
+  if (job == JOB_WATCH) {
+    job_watch();
+    return;
+  }
   job_ok = false;
   ask_pin = false;
   note[0] = '\0';
@@ -503,12 +546,32 @@ static void show_pin_after_error(void) {
     show_pin();
 }
 
+static void watch_tick(lv_timer_t *timer) {
+  (void)timer;
+  if (!screen || running)
+    return;
+  start_job(JOB_WATCH, NULL);
+}
+
+static void start_watch(void) {
+  if (watch_timer || !screen)
+    return;
+  watch_timer = lv_timer_create(watch_tick, 500, NULL);
+}
+
 static void after_open(void) {
   if (!job_ok) {
+    if (strcmp(note, "No card inserted.") == 0) {
+      show_slot(SMARTCARD_SLOT_ABSENT);
+      start_watch();
+      return;
+    }
     show_note(false);
+    stop_watch();
     reader_down();
     return;
   }
+  stop_watch();
   show_pin();
 }
 
@@ -586,12 +649,20 @@ static void after_save(void) {
 
 static void poll_cb(lv_timer_t *timer) {
   (void)timer;
-  if (!done)
+  if (!done) {
+    if (job == JOB_OPEN && card_present)
+      show_slot(SMARTCARD_SLOT_PRESENT);
     return;
+  }
   worker_task_wait();
   running = false;
   lv_timer_del(poll_timer);
   poll_timer = NULL;
+  if (job == JOB_WATCH) {
+    if (card_present && screen)
+      start_job(JOB_OPEN, "Opening a secure session...");
+    return;
+  }
   if (job == JOB_OPEN)
     after_open();
   else if (job == JOB_PIN)
@@ -608,18 +679,24 @@ static void start_job(int which, const char *status) {
   if (running || !body)
     return;
   job = which;
-  if (secret_menu)
-    ui_menu_hide(secret_menu);
-  chrome(true);
-  if (title)
-    lv_label_set_text(title, mode == MODE_SAVE ? "Save" : "Descriptor");
-  if (screen)
-    lv_obj_clear_flag(screen, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_clean(body);
-  lv_obj_clear_flag(body, LV_OBJ_FLAG_HIDDEN);
-  theme_create_label(body, status, true);
+  if (which == JOB_OPEN) {
+    show_slot(card_present ? SMARTCARD_SLOT_PRESENT : SMARTCARD_SLOT_ABSENT);
+  } else if (which != JOB_WATCH) {
+    smartcard_slot_notes(body);
+    if (secret_menu)
+      ui_menu_hide(secret_menu);
+    chrome(true);
+    if (title)
+      lv_label_set_text(title, mode == MODE_SAVE ? "Save" : "Descriptor");
+    if (screen)
+      lv_obj_clear_flag(screen, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clean(body);
+    lv_obj_clear_flag(body, LV_OBJ_FLAG_HIDDEN);
+    theme_create_label(body, status ? status : "", true);
+  }
   done = false;
   if (!worker_task_start_io("seedkeeper", DESC_STACK, worker, &done)) {
+    smartcard_slot_notes(body);
     lv_obj_clean(body);
     theme_create_label(body, "Could not start the card task.", true);
     return;
@@ -824,6 +901,8 @@ void smartcard_descriptor_load_create(lv_obj_t *parent, void (*return_cb)(void),
   loaded_callback = loaded_cb;
   mode = MODE_LOAD;
   build_screen(parent, "Descriptor");
+  card_present = false;
+  smartcard_slot_reset();
   start_job(JOB_OPEN, "Opening a secure session...");
 }
 
@@ -843,6 +922,8 @@ void smartcard_descriptor_save_create(lv_obj_t *parent, void (*return_cb)(void),
   loaded_callback = NULL;
   mode = MODE_SAVE;
   build_screen(parent, "Save");
+  card_present = false;
+  smartcard_slot_reset();
   copy_label(label);
   size_t n = text ? strlen(text) : 0;
   if (n == 0 || n > SEEDKEEPER_DESCRIPTOR_MAX) {
@@ -860,6 +941,8 @@ void smartcard_descriptor_save_create(lv_obj_t *parent, void (*return_cb)(void),
 
 void smartcard_descriptor_load_destroy(void) {
   session_cleanup_unregister(smartcard_descriptor_load_destroy);
+  stop_watch();
+  smartcard_slot_reset();
   ui_oneshot_cancel(&defer);
   if (running) {
     worker_task_wait();

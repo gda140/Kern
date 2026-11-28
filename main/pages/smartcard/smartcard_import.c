@@ -8,6 +8,7 @@
 
 #include "smartcard_import.h"
 #include "smartcard_page.h"
+#include "smartcard_slot.h"
 
 #if defined(CONFIG_KERN_BOARD_P4_PICO) && !defined(SIMULATOR)
 
@@ -46,7 +47,7 @@
 #define MNEMONIC_MAX 256
 #define PASS_MAX 128
 
-enum { JOB_OPEN, JOB_PIN, JOB_LIST, JOB_EXPORT };
+enum { JOB_OPEN, JOB_PIN, JOB_LIST, JOB_EXPORT, JOB_WATCH };
 
 static void (*return_callback)(void) = NULL;
 static void (*loaded_callback)(void) = NULL;
@@ -56,6 +57,8 @@ static lv_obj_t *back_btn = NULL;
 static lv_obj_t *body = NULL;
 static lv_obj_t *pin_host = NULL;
 static lv_timer_t *poll_timer = NULL;
+static lv_timer_t *watch_timer = NULL;
+static volatile bool card_present;
 static ui_oneshot_t defer;
 static ui_text_input_t pin_input;
 static ui_menu_t *secret_menu = NULL;
@@ -86,6 +89,13 @@ static void wipe_loaded(void) {
   has_passphrase = false;
 }
 
+static void stop_watch(void) {
+  if (!watch_timer)
+    return;
+  lv_timer_del(watch_timer);
+  watch_timer = NULL;
+}
+
 static void reader_down(void) {
   seedkeeper_session_close();
   if (!reader_up)
@@ -114,6 +124,7 @@ static void chrome(bool on) {
 
 static void show_menu(void);
 static void list_now(lv_timer_t *timer);
+static void body_notes(void);
 
 static void list_button_cb(lv_event_t *e) {
   (void)e;
@@ -121,6 +132,7 @@ static void list_button_cb(lv_event_t *e) {
 }
 
 static void show_note(bool list_button) {
+  body_notes();
   chrome(true);
   if (title)
     lv_label_set_text(title, "Import");
@@ -144,6 +156,19 @@ static void show_note(bool list_button) {
     lv_obj_set_style_margin_top(button, theme_default_padding(), 0);
     lv_obj_add_event_cb(button, list_button_cb, LV_EVENT_CLICKED, NULL);
   }
+}
+
+static void body_notes(void) { smartcard_slot_notes(body); }
+
+static void show_slot(int mark) {
+  if (!body)
+    return;
+  chrome(true);
+  if (title)
+    lv_label_set_text(title, "Import");
+  if (secret_menu)
+    ui_menu_hide(secret_menu);
+  smartcard_slot_show(body, mark);
 }
 
 static void note_sw(const char *what) {
@@ -194,6 +219,7 @@ static bool copy_text(char *dst, size_t cap, const uint8_t *src, size_t n) {
 }
 
 static void job_open(void) {
+  card_present = false;
   io_err = sec1210_init();
   if (io_err != SEC1210_OK)
     return;
@@ -208,6 +234,7 @@ static void job_open(void) {
     io_err = SEC1210_ERR_CARD;
     return;
   }
+  card_present = true;
 
   /* The card generates a key for the session. That sometimes fails on the
    * first try. Power-cycle and repeat. A wrong PIN is not on this path. */
@@ -433,7 +460,24 @@ out:
   secure_memzero(fingerprint, sizeof(fingerprint));
 }
 
+static void job_watch(void) {
+  card_present = false;
+  if (!reader_up) {
+    io_err = sec1210_init();
+    if (io_err != SEC1210_OK)
+      return;
+    reader_up = true;
+  }
+  sec1210_card_t card = SEC1210_CARD_ABSENT;
+  io_err = sec1210_slot_status(&card);
+  card_present = io_err == SEC1210_OK && card != SEC1210_CARD_ABSENT;
+}
+
 static void worker(void) {
+  if (job == JOB_WATCH) {
+    job_watch();
+    return;
+  }
   job_ok = false;
   ask_pin = false;
   note[0] = '\0';
@@ -460,12 +504,32 @@ static void show_pin_after_error(void) {
     show_pin();
 }
 
+static void watch_tick(lv_timer_t *timer) {
+  (void)timer;
+  if (!screen || running)
+    return;
+  start_job(JOB_WATCH, NULL);
+}
+
+static void start_watch(void) {
+  if (watch_timer || !screen)
+    return;
+  watch_timer = lv_timer_create(watch_tick, 500, NULL);
+}
+
 static void after_open(void) {
   if (!job_ok) {
+    if (strcmp(note, "No card inserted.") == 0) {
+      show_slot(SMARTCARD_SLOT_ABSENT);
+      start_watch();
+      return;
+    }
     show_note(false);
+    stop_watch();
     reader_down();
     return;
   }
+  stop_watch();
   show_pin();
 }
 
@@ -554,6 +618,7 @@ static void load_cb(lv_event_t *e) {
 }
 
 static void show_review(void) {
+  body_notes();
   chrome(true);
   if (title)
     lv_label_set_text(title, "Secret");
@@ -613,12 +678,20 @@ static void after_export(void) {
 
 static void poll_cb(lv_timer_t *timer) {
   (void)timer;
-  if (!done)
+  if (!done) {
+    if (job == JOB_OPEN && card_present)
+      show_slot(SMARTCARD_SLOT_PRESENT);
     return;
+  }
   worker_task_wait();
   running = false;
   lv_timer_del(poll_timer);
   poll_timer = NULL;
+  if (job == JOB_WATCH) {
+    if (card_present && screen)
+      start_job(JOB_OPEN, "Opening a secure session...");
+    return;
+  }
   if (job == JOB_OPEN)
     after_open();
   else if (job == JOB_PIN)
@@ -633,16 +706,22 @@ static void start_job(int which, const char *status) {
   if (running || !body)
     return;
   job = which;
-  if (secret_menu)
-    ui_menu_hide(secret_menu);
-  chrome(true);
-  if (title)
-    lv_label_set_text(title, "Import");
-  lv_obj_clean(body);
-  lv_obj_clear_flag(body, LV_OBJ_FLAG_HIDDEN);
-  theme_create_label(body, status, true);
+  if (which == JOB_OPEN) {
+    show_slot(card_present ? SMARTCARD_SLOT_PRESENT : SMARTCARD_SLOT_ABSENT);
+  } else if (which != JOB_WATCH) {
+    body_notes();
+    if (secret_menu)
+      ui_menu_hide(secret_menu);
+    chrome(true);
+    if (title)
+      lv_label_set_text(title, "Import");
+    lv_obj_clean(body);
+    lv_obj_clear_flag(body, LV_OBJ_FLAG_HIDDEN);
+    theme_create_label(body, status ? status : "", true);
+  }
   done = false;
   if (!worker_task_start_io("seedkeeper", IMPORT_STACK, worker, &done)) {
+    body_notes();
     lv_obj_clean(body);
     theme_create_label(body, "Could not start the card task.", true);
     return;
@@ -766,11 +845,14 @@ void smartcard_import_create(lv_obj_t *parent, void (*return_cb)(void),
                         LV_FLEX_ALIGN_CENTER);
   lv_obj_add_flag(body, LV_OBJ_FLAG_SCROLLABLE);
 
+  card_present = false;
+  smartcard_slot_reset();
   start_job(JOB_OPEN, "Opening a secure session...");
 }
 
 void smartcard_import_destroy(void) {
   session_cleanup_unregister(smartcard_import_destroy);
+  stop_watch();
   ui_oneshot_cancel(&defer);
   if (running) {
     worker_task_wait();
@@ -793,6 +875,8 @@ void smartcard_import_destroy(void) {
   body = NULL;
   title = NULL;
   back_btn = NULL;
+  smartcard_slot_reset();
+  card_present = false;
   return_callback = NULL;
   loaded_callback = NULL;
   secure_memzero(pin, sizeof(pin));

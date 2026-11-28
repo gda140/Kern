@@ -7,6 +7,7 @@
  */
 
 #include "smartcard_delete.h"
+#include "smartcard_slot.h"
 
 #if defined(CONFIG_KERN_BOARD_P4_PICO) && !defined(SIMULATOR)
 
@@ -30,7 +31,7 @@
 #define DELETE_STACK (48 * 1024)
 #define MAX_SECRETS 16
 
-enum { JOB_OPEN, JOB_PIN, JOB_LIST, JOB_RESET };
+enum { JOB_OPEN, JOB_PIN, JOB_LIST, JOB_RESET, JOB_WATCH };
 
 static void (*return_callback)(void) = NULL;
 static lv_obj_t *screen = NULL;
@@ -39,6 +40,8 @@ static lv_obj_t *back_btn = NULL;
 static lv_obj_t *body = NULL;
 static lv_obj_t *pin_host = NULL;
 static lv_timer_t *poll_timer = NULL;
+static lv_timer_t *watch_timer = NULL;
+static volatile bool card_present;
 static ui_oneshot_t defer;
 static ui_text_input_t pin_input;
 static ui_menu_t *secret_menu = NULL;
@@ -58,6 +61,13 @@ static bool list_truncated;
 static int reset_index;
 static sec1210_err_t io_err;
 static uint8_t sw1, sw2;
+
+static void stop_watch(void) {
+  if (!watch_timer)
+    return;
+  lv_timer_del(watch_timer);
+  watch_timer = NULL;
+}
 
 static void reader_down(void) {
   seedkeeper_session_close();
@@ -93,7 +103,19 @@ static void list_button_cb(lv_event_t *e) {
   ui_oneshot_start(&defer, list_now, 0);
 }
 
+static void show_slot(int mark) {
+  if (!body)
+    return;
+  if (secret_menu)
+    ui_menu_hide(secret_menu);
+  chrome(true);
+  if (title)
+    lv_label_set_text(title, "Delete");
+  smartcard_slot_show(body, mark);
+}
+
 static void show_note(bool list_button) {
+  smartcard_slot_notes(body);
   chrome(true);
   if (title)
     lv_label_set_text(title, "Delete");
@@ -162,6 +184,7 @@ static bool status_ok(void) {
 }
 
 static void job_open(void) {
+  card_present = false;
   io_err = sec1210_init();
   if (io_err != SEC1210_OK)
     return;
@@ -176,6 +199,7 @@ static void job_open(void) {
     io_err = SEC1210_ERR_CARD;
     return;
   }
+  card_present = true;
 
   /* The card generates a key for the session. That sometimes fails on the
    * first try. Power-cycle and repeat. A wrong PIN is not on this path. */
@@ -307,7 +331,24 @@ static void job_reset(void) {
     note_sw("Delete failed");
 }
 
+static void job_watch(void) {
+  card_present = false;
+  if (!reader_up) {
+    io_err = sec1210_init();
+    if (io_err != SEC1210_OK)
+      return;
+    reader_up = true;
+  }
+  sec1210_card_t card = SEC1210_CARD_ABSENT;
+  io_err = sec1210_slot_status(&card);
+  card_present = io_err == SEC1210_OK && card != SEC1210_CARD_ABSENT;
+}
+
 static void worker(void) {
+  if (job == JOB_WATCH) {
+    job_watch();
+    return;
+  }
   job_ok = false;
   ask_pin = false;
   note[0] = '\0';
@@ -334,12 +375,32 @@ static void show_pin_after_error(void) {
     show_pin();
 }
 
+static void watch_tick(lv_timer_t *timer) {
+  (void)timer;
+  if (!screen || running)
+    return;
+  start_job(JOB_WATCH, NULL);
+}
+
+static void start_watch(void) {
+  if (watch_timer || !screen)
+    return;
+  watch_timer = lv_timer_create(watch_tick, 500, NULL);
+}
+
 static void after_open(void) {
   if (!job_ok) {
+    if (strcmp(note, "No card inserted.") == 0) {
+      show_slot(SMARTCARD_SLOT_ABSENT);
+      start_watch();
+      return;
+    }
     show_note(false);
+    stop_watch();
     reader_down();
     return;
   }
+  stop_watch();
   show_pin();
 }
 
@@ -430,12 +491,20 @@ static void after_reset(void) {
 
 static void poll_cb(lv_timer_t *timer) {
   (void)timer;
-  if (!done)
+  if (!done) {
+    if (job == JOB_OPEN && card_present)
+      show_slot(SMARTCARD_SLOT_PRESENT);
     return;
+  }
   worker_task_wait();
   running = false;
   lv_timer_del(poll_timer);
   poll_timer = NULL;
+  if (job == JOB_WATCH) {
+    if (card_present && screen)
+      start_job(JOB_OPEN, "Opening a secure session...");
+    return;
+  }
   if (job == JOB_OPEN)
     after_open();
   else if (job == JOB_PIN)
@@ -450,16 +519,22 @@ static void start_job(int which, const char *status) {
   if (running || !body)
     return;
   job = which;
-  if (secret_menu)
-    ui_menu_hide(secret_menu);
-  chrome(true);
-  if (title)
-    lv_label_set_text(title, "Delete");
-  lv_obj_clean(body);
-  lv_obj_clear_flag(body, LV_OBJ_FLAG_HIDDEN);
-  theme_create_label(body, status, true);
+  if (which == JOB_OPEN) {
+    show_slot(card_present ? SMARTCARD_SLOT_PRESENT : SMARTCARD_SLOT_ABSENT);
+  } else if (which != JOB_WATCH) {
+    smartcard_slot_notes(body);
+    if (secret_menu)
+      ui_menu_hide(secret_menu);
+    chrome(true);
+    if (title)
+      lv_label_set_text(title, "Delete");
+    lv_obj_clean(body);
+    lv_obj_clear_flag(body, LV_OBJ_FLAG_HIDDEN);
+    theme_create_label(body, status ? status : "", true);
+  }
   done = false;
   if (!worker_task_start_io("seedkeeper", DELETE_STACK, worker, &done)) {
+    smartcard_slot_notes(body);
     lv_obj_clean(body);
     theme_create_label(body, "Could not start the card task.", true);
     return;
@@ -610,11 +685,15 @@ void smartcard_delete_create(lv_obj_t *parent, void (*return_cb)(void)) {
                         LV_FLEX_ALIGN_CENTER);
   lv_obj_add_flag(body, LV_OBJ_FLAG_SCROLLABLE);
 
+  card_present = false;
+  smartcard_slot_reset();
   start_job(JOB_OPEN, "Opening a secure session...");
 }
 
 void smartcard_delete_destroy(void) {
   session_cleanup_unregister(smartcard_delete_destroy);
+  stop_watch();
+  smartcard_slot_reset();
   ui_oneshot_cancel(&defer);
   if (running) {
     worker_task_wait();
