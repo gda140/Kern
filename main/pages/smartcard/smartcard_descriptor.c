@@ -192,11 +192,6 @@ static void show_note(bool list_button) {
   lv_obj_t *label = theme_create_label(body, text, false);
   lv_obj_set_width(label, LV_PCT(100));
   lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
-  if (io_err != SEC1210_OK && sec1210_last_detail()[0]) {
-    lv_obj_t *detail = theme_create_label(body, sec1210_last_detail(), false);
-    lv_obj_set_width(detail, LV_PCT(100));
-    lv_label_set_long_mode(detail, LV_LABEL_LONG_WRAP);
-  }
   if (list_button && seedkeeper_session_is_open()) {
     lv_obj_t *button = theme_create_button(body, "Back to the list", false);
     lv_obj_set_style_margin_top(button, theme_default_padding(), 0);

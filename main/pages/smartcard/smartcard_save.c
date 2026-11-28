@@ -164,11 +164,6 @@ static void show_note(void) {
   lv_obj_t *label = theme_create_label(body, text, false);
   lv_obj_set_width(label, LV_PCT(100));
   lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
-  if (io_err != SEC1210_OK && sec1210_last_detail()[0]) {
-    lv_obj_t *detail = theme_create_label(body, sec1210_last_detail(), false);
-    lv_obj_set_width(detail, LV_PCT(100));
-    lv_label_set_long_mode(detail, LV_LABEL_LONG_WRAP);
-  }
 }
 
 static void note_sw(const char *what) {

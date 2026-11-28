@@ -55,9 +55,6 @@ sec1210_err_t sec1210_transmit(const uint8_t *apdu, size_t apdu_len,
 
 const char *sec1210_err_str(sec1210_err_t err);
 
-/* Hex of the last CCID message seen by a failed exchange. Empty if none. */
-const char *sec1210_last_detail(void);
-
 #ifdef __cplusplus
 }
 #endif

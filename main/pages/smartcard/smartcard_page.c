@@ -102,8 +102,6 @@ static void probe(void) {
   if (err != SEC1210_OK) {
     append(&used, "Card inserted, power-on failed.");
     append(&used, sec1210_err_str(err));
-    if (sec1210_last_detail()[0])
-      append(&used, sec1210_last_detail());
     sec1210_deinit();
     offer_retry = true;
     done = true;
@@ -129,8 +127,6 @@ static void probe(void) {
       snprintf(line, sizeof(line), "Not a Seedkeeper (SW %02X%02X).", sw1, sw2);
     }
     append(&used, line);
-    if (err != SEC1210_OK && sec1210_last_detail()[0])
-      append(&used, sec1210_last_detail());
     sec1210_power_off();
     sec1210_deinit();
     done = true;

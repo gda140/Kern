@@ -29,7 +29,6 @@ static const char *TAG = "sec1210";
 
 static bool s_open;
 static uint8_t s_seq;
-static char s_detail[80];
 static bool s_t1;
 static uint8_t s_ns;
 static uint8_t s_nr;
@@ -70,18 +69,18 @@ const char *sec1210_err_str(sec1210_err_t err) {
   return "unknown";
 }
 
-const char *sec1210_last_detail(void) { return s_detail; }
-
-static void note_frame(const uint8_t *msg, size_t len) {
-  size_t show = len < 12 ? len : 12;
-  size_t used = 0;
-  s_detail[0] = '\0';
-  for (size_t i = 0; i < show && used + 3 < sizeof(s_detail); i++) {
-    int n = snprintf(s_detail + used, sizeof(s_detail) - used, "%02X", msg[i]);
-    if (n < 0)
-      return;
-    used += (size_t)n;
-  }
+/* Serial log only, and only the frame header: the bytes after it are card
+ * data (a PIN, a secret, or their ciphertext) and never leave the driver. */
+static void note_frame(const char *what, const uint8_t *msg, size_t len,
+                       size_t header) {
+  char hex[2 * SEC1210_CCID_HEADER + 1];
+  size_t show = len < header ? len : header;
+  if (show > SEC1210_CCID_HEADER)
+    show = SEC1210_CCID_HEADER;
+  for (size_t i = 0; i < show; i++)
+    snprintf(hex + 2 * i, 3, "%02X", msg[i]);
+  hex[2 * show] = '\0';
+  ESP_LOGD(TAG, "%s header %s (%u bytes)", what, hex, (unsigned)len);
 }
 
 sec1210_err_t sec1210_init(void) {
@@ -135,7 +134,6 @@ static sec1210_err_t transact(const uint8_t *ccid, size_t ccid_len,
     return SEC1210_ERR_ARG;
   }
 
-  s_detail[0] = '\0';
   sec1210_err_t result = SEC1210_ERR_TIMEOUT;
   for (int attempt = 0; attempt < SEC1210_ATTEMPTS; attempt++) {
     result = SEC1210_ERR_TIMEOUT;
@@ -193,7 +191,7 @@ static sec1210_err_t transact(const uint8_t *ccid, size_t ccid_len,
         result = SEC1210_ERR_PROTO;
         continue;
       }
-      note_frame(parser.ccid, parser.have);
+      note_frame("ccid", parser.ccid, parser.have, SEC1210_CCID_HEADER);
       /* Time extension: the card is still working. Grant another window. */
       if ((parser.ccid[7] & 0xC0) == 0x80) {
         card_busy = true;
@@ -390,7 +388,7 @@ static sec1210_err_t t1_send(uint8_t pcb, const uint8_t *inf, size_t inf_len,
   }
   if (!sec1210_t1_check(raw, raw_len, reply_pcb, reply_inf, reply_cap,
                         reply_len)) {
-    note_frame(raw, raw_len);
+    note_frame("bad t1 block", raw, raw_len, 3);
     wipe(raw, sizeof(raw));
     return SEC1210_ERR_PROTO;
   }
