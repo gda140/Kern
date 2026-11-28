@@ -431,6 +431,34 @@ bool seedkeeper_sc_open(const seedkeeper_sc_t *sc, const uint8_t *msg,
   return true;
 }
 
+bool seedkeeper_sc_der_rs(const uint8_t *sig, size_t len, uint8_t r[32],
+                          uint8_t s[32]) {
+  if (!sig || !r || !s || len < 8 || sig[0] != 0x30 || sig[1] > 127)
+    return false;
+  size_t lt = sig[1];
+  if (len < 2 + lt || sig[2] != 0x02)
+    return false;
+  size_t lr = sig[3];
+  if (lr == 0 || lr > 33 || 4 + lr >= 2 + lt)
+    return false;
+  if (sig[4 + lr] != 0x02)
+    return false;
+  size_t ls = sig[5 + lr];
+  if (ls == 0 || ls > 33 || lt != lr + ls + 4)
+    return false;
+  /* A 33-byte integer is a 32-byte value with a 0x00 sign byte in front. */
+  if ((lr == 33 && sig[4] != 0x00) || (ls == 33 && sig[6 + lr] != 0x00))
+    return false;
+
+  memset(r, 0, 32);
+  memset(s, 0, 32);
+  size_t rcopy = lr > 32 ? 32 : lr;
+  size_t scopy = ls > 32 ? 32 : ls;
+  memcpy(r + 32 - rcopy, sig + 4 + lr - rcopy, rcopy);
+  memcpy(s + 32 - scopy, sig + 6 + lr + ls - scopy, scopy);
+  return true;
+}
+
 bool seedkeeper_sc_parse_init(const uint8_t *resp, size_t len, uint8_t x[32],
                               const uint8_t **sig, size_t *sig_len) {
   if (!resp || !x || !sig || !sig_len || len < 4)

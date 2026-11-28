@@ -46,4 +46,9 @@ bool seedkeeper_sc_open(const seedkeeper_sc_t *sc, const uint8_t *msg,
 bool seedkeeper_sc_parse_init(const uint8_t *resp, size_t len, uint8_t x[32],
                               const uint8_t **sig, size_t *sig_len);
 
+/* Split a DER ECDSA signature into 32-byte big-endian r and s. Either may
+ * be 33 bytes on the wire when its top bit is set. */
+bool seedkeeper_sc_der_rs(const uint8_t *sig, size_t len, uint8_t r[32],
+                          uint8_t s[32]);
+
 #endif

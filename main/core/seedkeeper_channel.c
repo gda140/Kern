@@ -22,39 +22,12 @@ static int session_rng(void *ctx, unsigned char *out, size_t len) {
   return crypto_random_bytes(out, len) == CRYPTO_OK ? 0 : -1;
 }
 
-static bool der_rs(const uint8_t *sig, size_t len, uint8_t r[32],
-                   uint8_t s[32]) {
-  if (!sig || len < 8 || sig[0] != 0x30 || sig[1] > 127)
-    return false;
-  size_t lt = sig[1];
-  if (len < 2 + lt || sig[2] != 0x02)
-    return false;
-  size_t lr = sig[3];
-  if (lr == 0 || lr > 33 || 4 + lr >= 2 + lt)
-    return false;
-  if (sig[4 + lr] != 0x02)
-    return false;
-  size_t ls = sig[5 + lr];
-  if (ls == 0 || ls > 33 || lt != lr + ls + 4)
-    return false;
-  if ((lr == 33 && sig[4] != 0x00) || (ls == 33 && sig[5 + lr] != 0x00))
-    return false;
-
-  memset(r, 0, 32);
-  memset(s, 0, 32);
-  size_t rcopy = lr > 32 ? 32 : lr;
-  size_t scopy = ls > 32 ? 32 : ls;
-  memcpy(r + 32 - rcopy, sig + 4 + lr - rcopy, rcopy);
-  memcpy(s + 32 - scopy, sig + 6 + lr + ls - scopy, scopy);
-  return true;
-}
-
 static bool recover_peer(const uint8_t *msg, size_t msg_len, const uint8_t *sig,
                          size_t sig_len, const uint8_t x[32], uint8_t unc[65]) {
   uint8_t r[32], s[32], hash[32], compact[65];
   bool found = false;
   memset(compact, 0, sizeof(compact));
-  if (!der_rs(sig, sig_len, r, s) ||
+  if (!seedkeeper_sc_der_rs(sig, sig_len, r, s) ||
       wally_sha256(msg, msg_len, hash, sizeof(hash)) != WALLY_OK)
     goto out;
   memcpy(compact + 1, r, 32);

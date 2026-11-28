@@ -474,6 +474,72 @@ static void test_descriptor_secret(void) {
   expect("null descriptor header", !seedkeeper_can_descriptor(NULL));
 }
 
+/* 30 len | 02 lr r | 02 ls s, with r and s filled with `rb` and `sb`. */
+static size_t make_der(uint8_t *out, size_t lr, uint8_t rb, size_t ls,
+                       uint8_t sb) {
+  size_t i = 0;
+  out[i++] = 0x30;
+  out[i++] = (uint8_t)(4 + lr + ls);
+  out[i++] = 0x02;
+  out[i++] = (uint8_t)lr;
+  for (size_t k = 0; k < lr; k++)
+    out[i++] = (lr == 33 && k == 0) ? 0x00 : rb;
+  out[i++] = 0x02;
+  out[i++] = (uint8_t)ls;
+  for (size_t k = 0; k < ls; k++)
+    out[i++] = (ls == 33 && k == 0) ? 0x00 : sb;
+  return i;
+}
+
+static int all_bytes(const uint8_t *p, size_t n, uint8_t v) {
+  for (size_t i = 0; i < n; i++) {
+    if (p[i] != v)
+      return 0;
+  }
+  return 1;
+}
+
+static void test_der_rs(void) {
+  uint8_t sig[80];
+  uint8_t r[32], s[32];
+  size_t n = make_der(sig, 32, 0x11, 32, 0x22);
+  expect("der 32/32", seedkeeper_sc_der_rs(sig, n, r, s) &&
+                          all_bytes(r, 32, 0x11) && all_bytes(s, 32, 0x22));
+
+  n = make_der(sig, 33, 0x81, 32, 0x22);
+  expect("der high r", seedkeeper_sc_der_rs(sig, n, r, s) &&
+                           all_bytes(r, 32, 0x81) && all_bytes(s, 32, 0x22));
+
+  /* A high s comes as 33 bytes with a 0x00 sign byte. */
+  n = make_der(sig, 32, 0x11, 33, 0x82);
+  expect("der high s", seedkeeper_sc_der_rs(sig, n, r, s) &&
+                           all_bytes(r, 32, 0x11) && all_bytes(s, 32, 0x82));
+
+  n = make_der(sig, 33, 0x81, 33, 0x82);
+  expect("der high r and s", seedkeeper_sc_der_rs(sig, n, r, s) &&
+                                 all_bytes(r, 32, 0x81) &&
+                                 all_bytes(s, 32, 0x82));
+
+  n = make_der(sig, 31, 0x11, 31, 0x22);
+  expect("der short r and s",
+         seedkeeper_sc_der_rs(sig, n, r, s) && r[0] == 0 &&
+             all_bytes(r + 1, 31, 0x11) && s[0] == 0 &&
+             all_bytes(s + 1, 31, 0x22));
+
+  n = make_der(sig, 32, 0x11, 33, 0x82);
+  sig[6 + 32] = 0x01;
+  expect("der 33-byte s without sign byte",
+         !seedkeeper_sc_der_rs(sig, n, r, s));
+
+  n = make_der(sig, 33, 0x81, 32, 0x22);
+  sig[4] = 0x01;
+  expect("der 33-byte r without sign byte",
+         !seedkeeper_sc_der_rs(sig, n, r, s));
+
+  n = make_der(sig, 32, 0x11, 32, 0x22);
+  expect("der truncated", !seedkeeper_sc_der_rs(sig, n - 1, r, s));
+}
+
 int main(void) {
   test_slot_status_frame();
   test_nak_and_prefix();
@@ -482,6 +548,7 @@ int main(void) {
   test_seedkeeper();
   test_t1();
   test_secure_channel();
+  test_der_rs();
   test_secret_decode();
   test_secret_import();
   test_password_decode();
