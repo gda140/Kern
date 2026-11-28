@@ -5,6 +5,7 @@
 
 #include "sec1210_frame.h"
 #include "seedkeeper.h"
+#include "crypto_utils.h"
 #include "seedkeeper_sc.h"
 
 #include <stdio.h>
@@ -258,6 +259,25 @@ static int hexeq(const uint8_t *got, size_t n, const char *hex) {
   return 1;
 }
 
+/* A card answer to 16 plaintext bytes, IV counter as given. */
+static void card_reply(const seedkeeper_sc_t *sc, uint32_t counter,
+                       const char *plain, uint8_t out[50]) {
+  uint8_t iv[16];
+  memset(iv, 0x5A, 12);
+  iv[12] = (uint8_t)(counter >> 24);
+  iv[13] = (uint8_t)(counter >> 16);
+  iv[14] = (uint8_t)(counter >> 8);
+  iv[15] = (uint8_t)counter;
+  uint8_t pt[32];
+  memcpy(pt, plain, 16);
+  memset(pt + 16, 16, 16);
+  memcpy(out, iv, 16);
+  out[16] = 0;
+  out[17] = 32;
+  if (crypto_aes128_cbc_encrypt(sc->aes, iv, pt, 32, out + 18) != CRYPTO_OK)
+    memset(out, 0, 50);
+}
+
 static void test_secure_channel(void) {
   uint8_t shared[32];
   memset(shared, 0x11, sizeof(shared));
@@ -277,10 +297,21 @@ static void test_secure_channel(void) {
 
   uint8_t opened[32];
   size_t opened_len = 0;
-  expect("open sealed",
-         seedkeeper_sc_open(&sc, frame, 16 + 2 + 32, opened, sizeof(opened),
+  uint8_t reply[50];
+  card_reply(&sc, 2, plain, reply);
+  expect("open the reply to counter 1",
+         seedkeeper_sc_open(&sc, reply, sizeof(reply), opened, sizeof(opened),
                             &opened_len) &&
              opened_len == 16 && memcmp(opened, plain, 16) == 0);
+  expect("open rejects our own frame",
+         !seedkeeper_sc_open(&sc, frame, 16 + 2 + 32, opened, sizeof(opened),
+                             &opened_len));
+  card_reply(&sc, 4, plain, reply);
+  expect("open rejects a counter from the future",
+         !seedkeeper_sc_open(&sc, reply, sizeof(reply), opened, sizeof(opened),
+                             &opened_len));
+  uint8_t old_reply[50];
+  card_reply(&sc, 2, plain, old_reply);
 
   n = seedkeeper_sc_seal(&sc, prefix, (const uint8_t *)plain, 16, frame,
                          sizeof(frame));
@@ -290,6 +321,14 @@ static void test_secure_channel(void) {
       "bec47fc4";
   expect("seal counter 3",
          n == strlen(frame3) / 2 && hexeq(frame, n, frame3));
+  expect("open rejects a replayed reply",
+         !seedkeeper_sc_open(&sc, old_reply, sizeof(old_reply), opened,
+                             sizeof(opened), &opened_len));
+  card_reply(&sc, 4, plain, reply);
+  expect("open the reply to counter 3",
+         seedkeeper_sc_open(&sc, reply, sizeof(reply), opened, sizeof(opened),
+                            &opened_len) &&
+             opened_len == 16 && memcmp(opened, plain, 16) == 0);
   seedkeeper_sc_wipe(&sc);
 
   uint8_t init[4 + 32 + 2 + 2] = {0x00, 0x20};

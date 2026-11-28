@@ -94,6 +94,13 @@ bool seedkeeper_sc_open(const seedkeeper_sc_t *sc, const uint8_t *msg,
   size_t ct_len = ((size_t)msg[16] << 8) | msg[17];
   if (ct_len == 0 || (ct_len % 16) != 0 || msg_len != 18 + ct_len)
     return false;
+  /* The card answers with IV = random(12) || (command counter + 1). seal has
+   * already moved sc->counter 2 past the command's, so expect counter - 1. A
+   * stale or replayed response carries another counter. */
+  uint32_t got = ((uint32_t)msg[12] << 24) | ((uint32_t)msg[13] << 16) |
+                 ((uint32_t)msg[14] << 8) | (uint32_t)msg[15];
+  if (sc->counter < 3 || got != sc->counter - 1)
+    return false;
 
   uint8_t plain[SEEDKEEPER_SC_PLAIN_MAX + 16];
   if (ct_len > sizeof(plain))

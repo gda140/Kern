@@ -38,7 +38,10 @@ size_t seedkeeper_sc_seal(seedkeeper_sc_t *sc, const uint8_t iv_prefix[12],
                           const uint8_t *plain, size_t plain_len, uint8_t *out,
                           size_t cap);
 
-/* Decrypt a card response. Empty plaintext is success with *out_len 0. */
+/* Decrypt the card's answer to the last sealed command. Its IV counter must
+ * be that command's counter + 1, as the applet sets it. Responses carry no
+ * MAC, so this catches stale and replayed answers, not every alteration.
+ * Empty plaintext is success with *out_len 0. */
 bool seedkeeper_sc_open(const seedkeeper_sc_t *sc, const uint8_t *msg,
                         size_t msg_len, uint8_t *out, size_t cap,
                         size_t *out_len);
