@@ -147,9 +147,9 @@ void passphrase_page_create(lv_obj_t *parent, void (*return_cb)(void),
 
 #if defined(CONFIG_KERN_BOARD_P4_PICO) && !defined(SIMULATOR)
   lv_obj_t *card_btn =
-      theme_create_button(passphrase_screen, "From Seedkeeper", false);
+      theme_create_button(passphrase_screen, "From Seedkeeper", true);
   lv_obj_set_width(card_btn, LV_PCT(80));
-  lv_obj_align_to(card_btn, text_input.textarea, LV_ALIGN_OUT_BOTTOM_LEFT, 0,
+  lv_obj_align_to(card_btn, text_input.textarea, LV_ALIGN_OUT_BOTTOM_MID, 0,
                   theme_default_padding());
   lv_obj_add_event_cb(card_btn, from_seedkeeper_cb, LV_EVENT_CLICKED, NULL);
 #endif
