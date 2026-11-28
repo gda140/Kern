@@ -138,12 +138,12 @@ void smartcard_slot_show(lv_obj_t *body, int mark) {
     return;
   }
 
-  line_a[0] = (lv_point_precise_t){inset + inner * 4 / 100,
-                                   inset + inner * 46 / 100};
-  line_a[1] = (lv_point_precise_t){inset + inner * 36 / 100,
-                                   inset + inner * 84 / 100};
-  line_a[2] = (lv_point_precise_t){inset + inner * 96 / 100,
-                                   inset + inner * 6 / 100};
+  line_a[0] =
+      (lv_point_precise_t){inset + inner * 4 / 100, inset + inner * 46 / 100};
+  line_a[1] =
+      (lv_point_precise_t){inset + inner * 36 / 100, inset + inner * 84 / 100};
+  line_a[2] =
+      (lv_point_precise_t){inset + inner * 96 / 100, inset + inner * 6 / 100};
   draw_line(card, line_a, 3, mark_size, thick, good_color(), mx, my);
 }
 

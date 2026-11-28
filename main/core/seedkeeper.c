@@ -48,8 +48,8 @@ size_t seedkeeper_apdu_list(uint8_t p2, uint8_t *out, size_t cap) {
 
 size_t seedkeeper_apdu_export(uint16_t sid, uint8_t p2, uint8_t *out,
                               size_t cap) {
-  const uint8_t apdu[] = {0xB0, 0xA2, 0x01, p2, 0x02,
-                          (uint8_t)(sid >> 8), (uint8_t)sid};
+  const uint8_t apdu[] = {
+      0xB0, 0xA2, 0x01, p2, 0x02, (uint8_t)(sid >> 8), (uint8_t)sid};
   return put(out, cap, apdu, sizeof(apdu));
 }
 
@@ -206,13 +206,11 @@ static bool entropy_len_ok(size_t n) {
   return n == 16 || n == 20 || n == 24 || n == 28 || n == 32;
 }
 
-seedkeeper_decode_t seedkeeper_secret_decode(uint8_t type, uint8_t subtype,
-                                             const uint8_t *secret, size_t len,
-                                             seedkeeper_secret_form_t *form,
-                                             const uint8_t **material,
-                                             size_t *material_len,
-                                             const uint8_t **passphrase,
-                                             size_t *passphrase_len) {
+seedkeeper_decode_t
+seedkeeper_secret_decode(uint8_t type, uint8_t subtype, const uint8_t *secret,
+                         size_t len, seedkeeper_secret_form_t *form,
+                         const uint8_t **material, size_t *material_len,
+                         const uint8_t **passphrase, size_t *passphrase_len) {
   if (!secret || !form || !material || !material_len || !passphrase ||
       !passphrase_len)
     return SEEDKEEPER_DECODE_MALFORMED;
@@ -394,7 +392,7 @@ bool seedkeeper_import_result(const uint8_t *resp, size_t len, uint16_t *id,
 }
 
 size_t seedkeeper_apdu_reset(uint16_t sid, uint8_t *out, size_t cap) {
-  const uint8_t apdu[] = {0xB0, 0xA5, 0x00, 0x00, 0x02, (uint8_t)(sid >> 8),
-                          (uint8_t)sid};
+  const uint8_t apdu[] = {
+      0xB0, 0xA5, 0x00, 0x00, 0x02, (uint8_t)(sid >> 8), (uint8_t)sid};
   return put(out, cap, apdu, sizeof(apdu));
 }

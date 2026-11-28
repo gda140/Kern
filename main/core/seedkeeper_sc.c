@@ -180,9 +180,7 @@ static void aes_decrypt(const uint8_t rk[176], const uint8_t in[16],
   wipe(s, sizeof(s));
 }
 
-static uint32_t rol(uint32_t x, int n) {
-  return (x << n) | (x >> (32 - n));
-}
+static uint32_t rol(uint32_t x, int n) { return (x << n) | (x >> (32 - n)); }
 
 static void sha1_block(uint32_t h[5], const uint8_t block[64]) {
   uint32_t w[80];

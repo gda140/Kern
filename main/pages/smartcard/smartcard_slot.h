@@ -9,7 +9,8 @@ enum {
   SMARTCARD_SLOT_PRESENT,
 };
 
-/* Draw the card into body. Repeated calls with the same mark keep the picture. */
+/* Draw the card into body. Repeated calls with the same mark keep the picture.
+ */
 void smartcard_slot_show(lv_obj_t *body, int mark);
 
 /* Restore body for a text note and forget the last picture. */

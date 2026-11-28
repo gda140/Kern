@@ -267,7 +267,7 @@ static void job_open(void) {
     size_t resp_len = 0;
     size_t apdu_len = seedkeeper_apdu_select(apdu, sizeof(apdu));
     io_err = sec1210_transmit(apdu, apdu_len, resp, sizeof(resp), &resp_len,
-                             &sw1, &sw2);
+                              &sw1, &sw2);
     secure_memzero(resp, sizeof(resp));
     if (io_err != SEC1210_OK)
       continue;
@@ -514,8 +514,9 @@ static void after_deleted(void *user_data) {
     return;
   if (secret_count == 0) {
     if (skipped_authentikey)
-      snprintf(note, sizeof(note),
-               "The card's own certificate stays. Nothing else is on the card.");
+      snprintf(
+          note, sizeof(note),
+          "The card's own certificate stays. Nothing else is on the card.");
     else
       snprintf(note, sizeof(note), "Nothing else is on the card.");
     io_err = SEC1210_OK;

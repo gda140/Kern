@@ -284,7 +284,7 @@ static void job_open(void) {
     size_t resp_len = 0;
     size_t apdu_len = seedkeeper_apdu_select(apdu, sizeof(apdu));
     io_err = sec1210_transmit(apdu, apdu_len, resp, sizeof(resp), &resp_len,
-                             &sw1, &sw2);
+                              &sw1, &sw2);
     secure_memzero(resp, sizeof(resp));
     if (io_err != SEC1210_OK)
       continue;
@@ -474,8 +474,8 @@ static void job_save(void) {
   uint16_t sid = 0;
   uint8_t card_fp[4];
 
-  secret_len = seedkeeper_secret_encode_descriptor(descriptor, secret,
-                                                   sizeof(secret));
+  secret_len =
+      seedkeeper_secret_encode_descriptor(descriptor, secret, sizeof(secret));
   if (!secret_len ||
       wally_sha256(secret, secret_len, digest, sizeof(digest)) != WALLY_OK) {
     snprintf(note, sizeof(note), "This descriptor cannot be stored.");
@@ -509,9 +509,9 @@ static void job_save(void) {
     }
     offset += SEEDKEEPER_IMPORT_CHUNK;
   }
-  apdu_len = seedkeeper_apdu_import_data(SEEDKEEPER_P2_FINAL, secret + offset,
-                                         secret_len - offset, apdu,
-                                         sizeof(apdu));
+  apdu_len =
+      seedkeeper_apdu_import_data(SEEDKEEPER_P2_FINAL, secret + offset,
+                                  secret_len - offset, apdu, sizeof(apdu));
   if (!apdu_len || !send_apdu(apdu, apdu_len, resp, sizeof(resp), &resp_len)) {
     if (io_err == SEC1210_OK && !note[0])
       note_sw("Save failed");
@@ -946,7 +946,8 @@ static void show_name(void) {
   name_host = lv_obj_create(screen);
   lv_obj_remove_style_all(name_host);
   lv_obj_set_size(name_host, LV_PCT(100), LV_PCT(100));
-  ui_text_input_create(&name_input, name_host, "Secret name", false, name_ready);
+  ui_text_input_create(&name_input, name_host, "Secret name", false,
+                       name_ready);
   lv_textarea_set_max_length(name_input.textarea, SEEDKEEPER_LABEL_MAX);
   if (saved_label[0])
     lv_textarea_set_text(name_input.textarea, saved_label);

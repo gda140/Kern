@@ -223,7 +223,8 @@ static void seedkeeper_loaded(void) {
 
 static void from_seedkeeper_cb(void) {
   load_menu_page_hide();
-  smartcard_import_create(lv_screen_active(), seedkeeper_back, seedkeeper_loaded);
+  smartcard_import_create(lv_screen_active(), seedkeeper_back,
+                          seedkeeper_loaded);
 }
 #endif
 

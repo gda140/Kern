@@ -70,7 +70,9 @@ static char passphrase[PASS_MAX];
 static sec1210_err_t io_err;
 static uint8_t sw1, sw2;
 
-static void wipe_loaded(void) { secure_memzero(passphrase, sizeof(passphrase)); }
+static void wipe_loaded(void) {
+  secure_memzero(passphrase, sizeof(passphrase));
+}
 
 static void stop_watch(void) {
   if (!watch_timer)
@@ -267,7 +269,7 @@ static void job_open(void) {
     size_t resp_len = 0;
     size_t apdu_len = seedkeeper_apdu_select(apdu, sizeof(apdu));
     io_err = sec1210_transmit(apdu, apdu_len, resp, sizeof(resp), &resp_len,
-                             &sw1, &sw2);
+                              &sw1, &sw2);
     secure_memzero(resp, sizeof(resp));
     if (io_err != SEC1210_OK)
       continue;
@@ -717,9 +719,9 @@ static void show_menu(void) {
     ui_menu_destroy(secret_menu);
     secret_menu = NULL;
   }
-  secret_menu = ui_menu_create(
-      screen, list_truncated ? "First 16 secrets" : "Passwords",
-      return_callback);
+  secret_menu =
+      ui_menu_create(screen, list_truncated ? "First 16 secrets" : "Passwords",
+                     return_callback);
   for (int i = 0; i < secret_count; i++) {
     char fallback[24];
     const char *name = secrets[i].label;

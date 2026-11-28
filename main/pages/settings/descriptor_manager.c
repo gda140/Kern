@@ -397,10 +397,9 @@ static void load_source_back_cb(void) {
 
 static void load_descriptor_cb(void) {
 #if defined(CONFIG_KERN_BOARD_P4_PICO) && !defined(SIMULATOR)
-  descriptor_loader_show_source_menu(manager_screen, load_from_qr_cb,
-                                     load_from_flash_cb, load_from_sd_cb,
-                                     load_from_seedkeeper_cb,
-                                     load_source_back_cb);
+  descriptor_loader_show_source_menu(
+      manager_screen, load_from_qr_cb, load_from_flash_cb, load_from_sd_cb,
+      load_from_seedkeeper_cb, load_source_back_cb);
 #else
   descriptor_loader_show_source_menu(manager_screen, load_from_qr_cb,
                                      load_from_flash_cb, load_from_sd_cb, NULL,

@@ -137,13 +137,11 @@ typedef enum {
  * Entropy form is raw BIP39 entropy (English wordlist only). Mnemonic form
  * is the UTF-8 phrase. A raw master seed is unsupported.
  */
-seedkeeper_decode_t seedkeeper_secret_decode(uint8_t type, uint8_t subtype,
-                                             const uint8_t *secret, size_t len,
-                                             seedkeeper_secret_form_t *form,
-                                             const uint8_t **material,
-                                             size_t *material_len,
-                                             const uint8_t **passphrase,
-                                             size_t *passphrase_len);
+seedkeeper_decode_t
+seedkeeper_secret_decode(uint8_t type, uint8_t subtype, const uint8_t *secret,
+                         size_t len, seedkeeper_secret_form_t *form,
+                         const uint8_t **material, size_t *material_len,
+                         const uint8_t **passphrase, size_t *passphrase_len);
 
 /*
  * Password secret: length || password, then an optional login and URL, each

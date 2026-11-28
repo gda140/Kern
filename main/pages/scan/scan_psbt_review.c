@@ -258,10 +258,9 @@ static void psbt_desc_seedkeeper_cb(void) {
 
 static void psbt_offer_descriptor_cb(void) {
 #if defined(CONFIG_KERN_BOARD_P4_PICO) && !defined(SIMULATOR)
-  descriptor_loader_show_source_menu(scan_ctx.screen, psbt_desc_qr_cb,
-                                     psbt_desc_flash_cb, psbt_desc_sd_cb,
-                                     psbt_desc_seedkeeper_cb,
-                                     psbt_desc_menu_back_cb);
+  descriptor_loader_show_source_menu(
+      scan_ctx.screen, psbt_desc_qr_cb, psbt_desc_flash_cb, psbt_desc_sd_cb,
+      psbt_desc_seedkeeper_cb, psbt_desc_menu_back_cb);
 #else
   descriptor_loader_show_source_menu(scan_ctx.screen, psbt_desc_qr_cb,
                                      psbt_desc_flash_cb, psbt_desc_sd_cb, NULL,

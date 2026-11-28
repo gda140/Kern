@@ -2,10 +2,10 @@
 
 #if defined(CONFIG_KERN_BOARD_P4_PICO) && !defined(SIMULATOR)
 
+#include "../utils/secure_mem.h"
+#include "crypto_utils.h"
 #include "seedkeeper.h"
 #include "seedkeeper_sc.h"
-#include "crypto_utils.h"
-#include "../utils/secure_mem.h"
 
 #include <mbedtls/ecp.h>
 #include <string.h>
@@ -181,13 +181,14 @@ static sec1210_err_t transmit_once(const uint8_t *apdu, size_t apdu_len,
                                    size_t *resp_len, uint8_t *sw1,
                                    uint8_t *sw2) {
   uint8_t prefix[SEEDKEEPER_SC_IV_PREFIX];
-  uint8_t frame[16 + 2 + SEEDKEEPER_SC_PLAIN_MAX + 16 + 2 + SEEDKEEPER_SC_MAC_LEN];
+  uint8_t
+      frame[16 + 2 + SEEDKEEPER_SC_PLAIN_MAX + 16 + 2 + SEEDKEEPER_SC_MAC_LEN];
   uint8_t outer[5 + sizeof(frame)];
   uint8_t raw[SEC1210_MAX_APDU];
   if (crypto_random_bytes(prefix, sizeof(prefix)) != CRYPTO_OK)
     return SEC1210_ERR_IO;
-  size_t framed =
-      seedkeeper_sc_seal(&session, prefix, apdu, apdu_len, frame, sizeof(frame));
+  size_t framed = seedkeeper_sc_seal(&session, prefix, apdu, apdu_len, frame,
+                                     sizeof(frame));
   secure_memzero(prefix, sizeof(prefix));
   if (framed == 0 || framed > 255) {
     secure_memzero(frame, sizeof(frame));
@@ -204,8 +205,8 @@ static sec1210_err_t transmit_once(const uint8_t *apdu, size_t apdu_len,
 
   size_t raw_len = 0;
   uint8_t s1 = 0, s2 = 0;
-  sec1210_err_t err = sec1210_transmit(outer, 5 + framed, raw, sizeof(raw),
-                                       &raw_len, &s1, &s2);
+  sec1210_err_t err =
+      sec1210_transmit(outer, 5 + framed, raw, sizeof(raw), &raw_len, &s1, &s2);
   secure_memzero(outer, sizeof(outer));
   if (sw1)
     *sw1 = s1;

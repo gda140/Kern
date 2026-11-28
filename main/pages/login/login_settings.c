@@ -11,8 +11,8 @@
 #include "../../utils/session_cleanup.h"
 #include "../settings/firmware_update.h"
 #include "../settings/self_test_page.h"
-#include "security_settings.h"
 #include "../smartcard/smartcard_page.h"
+#include "security_settings.h"
 #include <bsp/display.h>
 #include <lvgl.h>
 

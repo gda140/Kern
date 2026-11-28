@@ -11,9 +11,9 @@
 #ifndef SEEDKEEPER_SC_H
 #define SEEDKEEPER_SC_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdbool.h>
 
 #define SEEDKEEPER_SC_X_LEN 32
 #define SEEDKEEPER_SC_IV_PREFIX 12

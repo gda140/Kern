@@ -302,7 +302,7 @@ static void job_open(void) {
     size_t resp_len = 0;
     size_t apdu_len = seedkeeper_apdu_select(apdu, sizeof(apdu));
     io_err = sec1210_transmit(apdu, apdu_len, resp, sizeof(resp), &resp_len,
-                             &sw1, &sw2);
+                              &sw1, &sw2);
     secure_memzero(resp, sizeof(resp));
     if (io_err != SEC1210_OK)
       continue;
@@ -326,7 +326,8 @@ static void job_pin(void) {
   uint8_t apdu[5 + SEEDKEEPER_PIN_MAX];
   uint8_t resp[64];
   size_t resp_len = 0;
-  size_t apdu_len = seedkeeper_apdu_verify_pin(pin, pin_len, apdu, sizeof(apdu));
+  size_t apdu_len =
+      seedkeeper_apdu_verify_pin(pin, pin_len, apdu, sizeof(apdu));
   secure_memzero(pin, sizeof(pin));
   pin_len = 0;
   if (!apdu_len) {

@@ -11,9 +11,9 @@
 
 #include "sec1210.h"
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdbool.h>
 
 sec1210_err_t seedkeeper_session_open(void);
 void seedkeeper_session_close(void);

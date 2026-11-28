@@ -45,7 +45,8 @@ static void append(size_t *used, const char *line) {
   int n = snprintf(report + *used, REPORT_LEN - *used, "%s%s",
                    *used ? "\n" : "", line);
   if (n > 0)
-    *used += (size_t)n < REPORT_LEN - *used ? (size_t)n : REPORT_LEN - *used - 1;
+    *used +=
+        (size_t)n < REPORT_LEN - *used ? (size_t)n : REPORT_LEN - *used - 1;
 }
 
 static void hex_line(char *dst, size_t cap, const char *prefix,
@@ -147,8 +148,8 @@ static void probe(void) {
     append(&used, "Seedkeeper found. The card asked for its PIN.");
     offer_import = true;
   } else if (err != SEC1210_OK || sw1 != 0x90 || sw2 != 0x00) {
-    snprintf(line, sizeof(line), "Seedkeeper found. Status failed (SW %02X%02X).",
-             sw1, sw2);
+    snprintf(line, sizeof(line),
+             "Seedkeeper found. Status failed (SW %02X%02X).", sw1, sw2);
     if (err != SEC1210_OK)
       snprintf(line, sizeof(line), "Status failed: %s", sec1210_err_str(err));
     append(&used, line);
@@ -157,7 +158,8 @@ static void probe(void) {
     if (!seedkeeper_status_parse(resp, resp_len, &status)) {
       append(&used, "Seedkeeper found. Status was too short.");
     } else {
-      snprintf(line, sizeof(line), "Seedkeeper. %u secrets, %u of %u bytes free.",
+      snprintf(line, sizeof(line),
+               "Seedkeeper. %u secrets, %u of %u bytes free.",
                status.nb_secrets, status.free_memory, status.total_memory);
       append(&used, line);
     }

@@ -276,7 +276,7 @@ static void job_open(void) {
     size_t resp_len = 0;
     size_t apdu_len = seedkeeper_apdu_select(apdu, sizeof(apdu));
     io_err = sec1210_transmit(apdu, apdu_len, resp, sizeof(resp), &resp_len,
-                             &sw1, &sw2);
+                              &sw1, &sw2);
     secure_memzero(resp, sizeof(resp));
     if (io_err != SEC1210_OK)
       continue;
@@ -300,7 +300,8 @@ static void job_pin(void) {
   uint8_t apdu[5 + SEEDKEEPER_PIN_MAX];
   uint8_t resp[64];
   size_t resp_len = 0;
-  size_t apdu_len = seedkeeper_apdu_verify_pin(pin, pin_len, apdu, sizeof(apdu));
+  size_t apdu_len =
+      seedkeeper_apdu_verify_pin(pin, pin_len, apdu, sizeof(apdu));
   secure_memzero(pin, sizeof(pin));
   pin_len = 0;
   if (!apdu_len) {
@@ -357,9 +358,9 @@ static void job_save(void) {
   }
   SECURE_FREE_STRING(mnemonic);
 
-  secret_len = seedkeeper_secret_encode_bip39(seed, sizeof(seed), entropy,
-                                              entropy_len, NULL, 0, secret,
-                                              sizeof(secret));
+  secret_len =
+      seedkeeper_secret_encode_bip39(seed, sizeof(seed), entropy, entropy_len,
+                                     NULL, 0, secret, sizeof(secret));
   secure_memzero(seed, sizeof(seed));
   secure_memzero(entropy, sizeof(entropy));
   if (!secret_len ||
@@ -403,9 +404,9 @@ static void job_save(void) {
     }
     offset += SEEDKEEPER_IMPORT_CHUNK;
   }
-  apdu_len = seedkeeper_apdu_import_data(SEEDKEEPER_P2_FINAL, secret + offset,
-                                         secret_len - offset, apdu,
-                                         sizeof(apdu));
+  apdu_len =
+      seedkeeper_apdu_import_data(SEEDKEEPER_P2_FINAL, secret + offset,
+                                  secret_len - offset, apdu, sizeof(apdu));
   if (!apdu_len) {
     snprintf(note, sizeof(note), "This seed cannot be encoded.");
     goto out;
